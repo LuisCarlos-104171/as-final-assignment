@@ -1,0 +1,71 @@
+@model IEnumerable<MvcWeb.Models.SubmittedArticle>
+@{
+    ViewBag.Title = "Article Workflow";
+    
+    // Helper function to get status badge color
+    string GetStatusBadgeClass(MvcWeb.Models.ArticleStatus status) => status switch
+    {
+        MvcWeb.Models.ArticleStatus.Draft => "bg-secondary",
+        MvcWeb.Models.ArticleStatus.InReview => "bg-info",
+        MvcWeb.Models.ArticleStatus.Rejected => "bg-danger",
+        MvcWeb.Models.ArticleStatus.Approved => "bg-warning",
+        MvcWeb.Models.ArticleStatus.Published => "bg-success",
+        MvcWeb.Models.ArticleStatus.Archived => "bg-dark",
+        _ => "bg-secondary"
+    };
+}
+
+<div class="container">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="mb-4">Article Workflow</h1>
+            
+            @if (!Model.Any())
+            {
+                <div class="alert alert-info">
+                    No articles are currently in the workflow.
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Author</th>
+                                <th>Submitted</th>
+                                <th>Status</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var article in Model)
+                            {
+                                <tr>
+                                    <td>
+                                        <a href="@Url.Action("Review", new { id = article.Id })">
+                                            @article.Submission.Title
+                                        </a>
+                                    </td>
+                                    <td>@article.Submission.Author</td>
+                                    <td>@article.Created.ToString("yyyy-MM-dd")</td>
+                                    <td>
+                                        <span class="badge @GetStatusBadgeClass(article.Status)">
+                                            @article.Status.ToString()
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <a href="@Url.Action("Review", new { id = article.Id })" class="btn btn-sm btn-primary">
+                                            Review
+                                        </a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>

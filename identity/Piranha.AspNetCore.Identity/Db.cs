@@ -88,16 +88,16 @@ public abstract class Db<T> :
         SaveChanges();
 
         // Make sure we have a SysAdmin role
-        var role = Roles.FirstOrDefault(r => r.NormalizedName == "SYSADMIN");
-        if (role == null)
+        var sysAdminRole = Roles.FirstOrDefault(r => r.NormalizedName == "SYSADMIN");
+        if (sysAdminRole == null)
         {
-            role = new Role
+            sysAdminRole = new Role
             {
                 Id = Guid.NewGuid(),
                 Name = "SysAdmin",
                 NormalizedName = "SYSADMIN"
             };
-            Roles.Add(role);
+            Roles.Add(sysAdminRole);
         }
 
         // Make sure our SysAdmin role has all of the available claims
@@ -105,14 +105,189 @@ public abstract class Db<T> :
         foreach (var permission in App.Permissions.GetPermissions())
         {
             var roleClaim = RoleClaims.FirstOrDefault(c =>
-                c.RoleId == role.Id && c.ClaimType == permission.Name && c.ClaimValue == permission.Name);
+                c.RoleId == sysAdminRole.Id && c.ClaimType == permission.Name && c.ClaimValue == permission.Name);
             if (roleClaim == null)
             {
                 RoleClaims.Add(new IdentityRoleClaim<Guid>
                 {
-                    RoleId = role.Id,
+                    RoleId = sysAdminRole.Id,
                     ClaimType = permission.Name,
                     ClaimValue = permission.Name
+                });
+            }
+        }
+
+        // Writer role - can create and edit content but not publish or delete
+        var writerRole = Roles.FirstOrDefault(r => r.NormalizedName == "WRITER");
+        if (writerRole == null)
+        {
+            writerRole = new Role
+            {
+                Id = Guid.NewGuid(),
+                Name = "Writer",
+                NormalizedName = "WRITER"
+            };
+            Roles.Add(writerRole);
+        }
+
+        // Writer permissions
+        var writerPermissions = new[]
+        {
+            Piranha.Security.Permission.PagePreview,
+            Piranha.Security.Permission.PostPreview,
+            Piranha.Manager.Permission.Pages,
+            Piranha.Manager.Permission.PagesEdit,
+            Piranha.Manager.Permission.PagesSave,
+            Piranha.Manager.Permission.Posts,
+            Piranha.Manager.Permission.PostsEdit,
+            Piranha.Manager.Permission.PostsSave,
+            Piranha.Manager.Permission.Media,
+            Piranha.Manager.Permission.MediaAdd,
+            Piranha.Manager.Permission.MediaEdit,
+            Piranha.Manager.Permission.Content,
+            Piranha.Manager.Permission.ContentEdit,
+            Piranha.Manager.Permission.ContentSave,
+            // Workflow permissions
+            Piranha.Manager.WorkflowPermissions.ContentSubmitForReview,
+            Piranha.Manager.WorkflowPermissions.PagesSubmitForReview,
+            Piranha.Manager.WorkflowPermissions.PostsSubmitForReview
+        };
+
+        foreach (var permissionName in writerPermissions)
+        {
+            var writerClaim = RoleClaims.FirstOrDefault(c =>
+                c.RoleId == writerRole.Id && c.ClaimType == permissionName && c.ClaimValue == permissionName);
+            if (writerClaim == null)
+            {
+                RoleClaims.Add(new IdentityRoleClaim<Guid>
+                {
+                    RoleId = writerRole.Id,
+                    ClaimType = permissionName,
+                    ClaimValue = permissionName
+                });
+            }
+        }
+
+        // Editor role - can create, edit and delete content but not publish
+        var editorRole = Roles.FirstOrDefault(r => r.NormalizedName == "EDITOR");
+        if (editorRole == null)
+        {
+            editorRole = new Role
+            {
+                Id = Guid.NewGuid(),
+                Name = "Editor",
+                NormalizedName = "EDITOR"
+            };
+            Roles.Add(editorRole);
+        }
+
+        // Editor permissions
+        var editorPermissions = new[]
+        {
+            Piranha.Security.Permission.PagePreview,
+            Piranha.Security.Permission.PostPreview,
+            Piranha.Manager.Permission.Pages,
+            Piranha.Manager.Permission.PagesAdd,
+            Piranha.Manager.Permission.PagesEdit,
+            Piranha.Manager.Permission.PagesSave,
+            Piranha.Manager.Permission.PagesDelete,
+            Piranha.Manager.Permission.Posts,
+            Piranha.Manager.Permission.PostsAdd,
+            Piranha.Manager.Permission.PostsEdit,
+            Piranha.Manager.Permission.PostsSave,
+            Piranha.Manager.Permission.PostsDelete,
+            Piranha.Manager.Permission.Media,
+            Piranha.Manager.Permission.MediaAdd,
+            Piranha.Manager.Permission.MediaEdit,
+            Piranha.Manager.Permission.MediaDelete,
+            Piranha.Manager.Permission.MediaAddFolder,
+            Piranha.Manager.Permission.MediaDeleteFolder,
+            Piranha.Manager.Permission.Content,
+            Piranha.Manager.Permission.ContentAdd,
+            Piranha.Manager.Permission.ContentEdit,
+            Piranha.Manager.Permission.ContentSave,
+            Piranha.Manager.Permission.ContentDelete,
+            Piranha.Manager.Permission.Comments,
+            Piranha.Manager.Permission.CommentsApprove,
+            Piranha.Manager.Permission.CommentsDelete,
+            // Workflow permissions
+            Piranha.Manager.WorkflowPermissions.ContentSubmitForReview,
+            Piranha.Manager.WorkflowPermissions.PagesSubmitForReview,
+            Piranha.Manager.WorkflowPermissions.PostsSubmitForReview,
+            Piranha.Manager.WorkflowPermissions.ContentReview,
+            Piranha.Manager.WorkflowPermissions.PagesReview,
+            Piranha.Manager.WorkflowPermissions.PostsReview,
+            Piranha.Manager.WorkflowPermissions.ContentReject,
+            Piranha.Manager.WorkflowPermissions.PagesReject,
+            Piranha.Manager.WorkflowPermissions.PostsReject
+        };
+
+        foreach (var permissionName in editorPermissions)
+        {
+            var editorClaim = RoleClaims.FirstOrDefault(c =>
+                c.RoleId == editorRole.Id && c.ClaimType == permissionName && c.ClaimValue == permissionName);
+            if (editorClaim == null)
+            {
+                RoleClaims.Add(new IdentityRoleClaim<Guid>
+                {
+                    RoleId = editorRole.Id,
+                    ClaimType = permissionName,
+                    ClaimValue = permissionName
+                });
+            }
+        }
+
+        // Approver role - can publish content but has limited editing capabilities
+        var approverRole = Roles.FirstOrDefault(r => r.NormalizedName == "APPROVER");
+        if (approverRole == null)
+        {
+            approverRole = new Role
+            {
+                Id = Guid.NewGuid(),
+                Name = "Approver",
+                NormalizedName = "APPROVER"
+            };
+            Roles.Add(approverRole);
+        }
+
+        // Approver permissions
+        var approverPermissions = new[]
+        {
+            Piranha.Security.Permission.PagePreview,
+            Piranha.Security.Permission.PostPreview,
+            Piranha.Manager.Permission.Pages,
+            Piranha.Manager.Permission.PagesEdit,
+            Piranha.Manager.Permission.PagesSave,
+            Piranha.Manager.Permission.PagesPublish,
+            Piranha.Manager.Permission.Posts,
+            Piranha.Manager.Permission.PostsEdit,
+            Piranha.Manager.Permission.PostsSave,
+            Piranha.Manager.Permission.PostsPublish,
+            Piranha.Manager.Permission.Media,
+            Piranha.Manager.Permission.Content,
+            Piranha.Manager.Permission.ContentEdit,
+            Piranha.Manager.Permission.Comments,
+            Piranha.Manager.Permission.CommentsApprove,
+            // Workflow permissions
+            Piranha.Manager.WorkflowPermissions.ContentApprove,
+            Piranha.Manager.WorkflowPermissions.PagesApprove,
+            Piranha.Manager.WorkflowPermissions.PostsApprove,
+            Piranha.Manager.WorkflowPermissions.ContentReview,
+            Piranha.Manager.WorkflowPermissions.PagesReview,
+            Piranha.Manager.WorkflowPermissions.PostsReview
+        };
+
+        foreach (var permissionName in approverPermissions)
+        {
+            var approverClaim = RoleClaims.FirstOrDefault(c =>
+                c.RoleId == approverRole.Id && c.ClaimType == permissionName && c.ClaimValue == permissionName);
+            if (approverClaim == null)
+            {
+                RoleClaims.Add(new IdentityRoleClaim<Guid>
+                {
+                    RoleId = approverRole.Id,
+                    ClaimType = permissionName,
+                    ClaimValue = permissionName
                 });
             }
         }

@@ -1,0 +1,89 @@
+@model IEnumerable<MvcWeb.Models.SubmittedArticle>
+@{
+    ViewBag.Title = "Community Submissions";
+}
+
+<header class="page-header">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-10 offset-md-1">
+                <h1>Community Submissions</h1>
+                <p class="lead">Articles submitted by our community</p>
+            </div>
+        </div>
+    </div>
+</header>
+
+<div class="container body-container">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            @if (!Model.Any())
+            {
+                <div class="card mb-5">
+                    <div class="card-body text-center py-5">
+                        <h3>No published submissions yet</h3>
+                        <p class="lead mt-3">Be the first to submit an article!</p>
+                        <a href="~/article/submit" class="btn btn-primary mt-3">Submit an Article</a>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="row">
+                    <div class="col-12 mb-5">
+                        <a href="~/article/submit" class="btn btn-primary">Submit an Article</a>
+                    </div>
+                </div>
+                
+                @foreach (var submission in Model)
+                {
+                    <article class="card mb-5">
+                        <div class="card-body">
+                            <h2 class="card-title">
+                                @if (submission.PostId.HasValue)
+                                {
+                                    <a href="@Url.Action("Detail", new { id = submission.Id })">@submission.Submission.Title</a>
+                                }
+                                else
+                                {
+                                    @submission.Submission.Title
+                                }
+                            </h2>
+                            
+                            <div class="card-subtitle mb-3 text-muted">
+                                <span>By @submission.Submission.Author</span>
+                                <span class="mx-2">|</span>
+                                <span>Published @submission.Published?.ToString("MMMM dd, yyyy")</span>
+                                
+                                @if (!string.IsNullOrEmpty(submission.Submission.Category))
+                                {
+                                    <span class="mx-2">|</span>
+                                    <span>@submission.Submission.Category</span>
+                                }
+                            </div>
+                            
+                            @if (!string.IsNullOrEmpty(submission.Submission.Excerpt))
+                            {
+                                <p class="card-text">@submission.Submission.Excerpt</p>
+                            }
+                            else
+                            {
+                                @* Show a truncated version of the content *@
+                                <p class="card-text">@(submission.Submission.Content.Length > 200 
+                                    ? submission.Submission.Content.Substring(0, 200) + "..." 
+                                    : submission.Submission.Content)</p>
+                            }
+                            
+                            <div class="mt-3">
+                                @if (submission.PostId.HasValue)
+                                {
+                                    <a href="@Url.Action("Detail", new { id = submission.Id })" class="btn btn-sm btn-primary">Read More</a>
+                                }
+                            </div>
+                        </div>
+                    </article>
+                }
+            }
+        </div>
+    </div>
+</div>

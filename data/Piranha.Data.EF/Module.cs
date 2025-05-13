@@ -105,7 +105,11 @@ public class Module : IModule
                 .ForMember(p => p.Permalink, o => o.MapFrom(m => "/" + m.Slug))
                 .ForMember(p => p.Permissions, o => o.Ignore())
                 .ForMember(p => p.Blocks, o => o.Ignore())
-                .ForMember(p => p.CommentCount, o => o.Ignore());
+                .ForMember(p => p.CommentCount, o => o.Ignore())
+                .ForMember(p => p.WorkflowState, o => o.MapFrom(m => m.WorkflowState))
+                .ForMember(p => p.LastReviewerId, o => o.MapFrom(m => m.LastReviewerId))
+                .ForMember(p => p.LastReviewedOn, o => o.MapFrom(m => m.LastReviewedOn))
+                .ForMember(p => p.ReviewComment, o => o.MapFrom(m => m.ReviewComment));
             cfg.CreateMap<Models.PageBase, Data.Page>()
                 .ForMember(p => p.ContentType, o => o.Ignore())
                 .ForMember(p => p.PrimaryImageId, o => o.MapFrom(m => m.PrimaryImage != null ? m.PrimaryImage.Id : (Guid?)null ))
@@ -118,7 +122,11 @@ public class Module : IModule
                 .ForMember(p => p.Permissions, o => o.Ignore())
                 .ForMember(p => p.PageType, o => o.Ignore())
                 .ForMember(p => p.Site, o => o.Ignore())
-                .ForMember(p => p.Parent, o => o.Ignore());
+                .ForMember(p => p.Parent, o => o.Ignore())
+                .ForMember(p => p.WorkflowState, o => o.MapFrom(m => m.WorkflowState))
+                .ForMember(p => p.LastReviewerId, o => o.MapFrom(m => m.LastReviewerId))
+                .ForMember(p => p.LastReviewedOn, o => o.MapFrom(m => m.LastReviewedOn))
+                .ForMember(p => p.ReviewComment, o => o.MapFrom(m => m.ReviewComment));
             cfg.CreateMap<Data.Page, Models.SitemapItem>()
                 .ForMember(p => p.MenuTitle, o => o.Ignore())
                 .ForMember(p => p.Level, o => o.Ignore())
@@ -136,7 +144,11 @@ public class Module : IModule
                 .ForMember(p => p.Permalink, o => o.Ignore())
                 .ForMember(p => p.Permissions, o => o.Ignore())
                 .ForMember(p => p.Blocks, o => o.Ignore())
-                .ForMember(p => p.CommentCount, o => o.Ignore());
+                .ForMember(p => p.CommentCount, o => o.Ignore())
+                .ForMember(p => p.WorkflowState, o => o.MapFrom(m => m.WorkflowState))
+                .ForMember(p => p.LastReviewerId, o => o.MapFrom(m => m.LastReviewerId))
+                .ForMember(p => p.LastReviewedOn, o => o.MapFrom(m => m.LastReviewedOn))
+                .ForMember(p => p.ReviewComment, o => o.MapFrom(m => m.ReviewComment));
             cfg.CreateMap<Data.PostTag, Models.Taxonomy>()
                 .ForMember(p => p.Id, o => o.MapFrom(m => m.TagId))
                 .ForMember(p => p.Title, o => o.MapFrom(m => m.Tag.Title))
@@ -155,7 +167,11 @@ public class Module : IModule
                 .ForMember(p => p.PostType, o => o.Ignore())
                 .ForMember(p => p.Blog, o => o.Ignore())
                 .ForMember(p => p.Category, o => o.Ignore())
-                .ForMember(p => p.Tags, o => o.Ignore());
+                .ForMember(p => p.Tags, o => o.Ignore())
+                .ForMember(p => p.WorkflowState, o => o.MapFrom(m => m.WorkflowState))
+                .ForMember(p => p.LastReviewerId, o => o.MapFrom(m => m.LastReviewerId))
+                .ForMember(p => p.LastReviewedOn, o => o.MapFrom(m => m.LastReviewedOn))
+                .ForMember(p => p.ReviewComment, o => o.MapFrom(m => m.ReviewComment));
             cfg.CreateMap<Data.Site, Data.Site>()
                 .ForMember(s => s.Id, o => o.Ignore())
                 .ForMember(s => s.Language, o => o.Ignore())

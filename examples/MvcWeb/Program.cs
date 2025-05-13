@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using MvcWeb;
 using Piranha;
 using Piranha.AspNetCore.Identity.SQLite;
 using Piranha.AttributeBuilder;
 using Piranha.Data.EF.SQLite;
 using Piranha.Manager.Editor;
+using MvcWeb.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -29,15 +31,27 @@ builder.AddPiranha(options =>
     options.UseEF<SQLiteDb>(db => db.UseSqlite(connectionString));
     options.UseIdentityWithSeed<IdentitySQLiteDb>(db => db.UseSqlite(connectionString));
 
-    /**
-     * Here you can configure the different permissions
-     * that you want to use for securing content in the
-     * application.
+    // Add our article database context
+    builder.Services.AddDbContext<ArticleDbContext>(options => 
+        options.UseSqlite(connectionString));
+        
+    // Register our custom repository
+    builder.Services.AddScoped<ArticleSubmissionRepository>();
+    
+    // Ensure database is created
+    builder.Services.BuildServiceProvider().GetService<ArticleDbContext>()?.Database.EnsureCreated();
+    
+    // Configure the different permissions for securing content in the application
     options.UseSecurity(o =>
     {
         o.UsePermission("WebUser", "Web User");
+        
+        // Register workflow permissions for policy-based authorization
+        foreach (var permission in Piranha.Manager.WorkflowPermissions.All())
+        {
+            o.UsePermission(permission);
+        }
     });
-     */
 
     /**
      * Here you can specify the login url for the front end
@@ -71,6 +85,9 @@ app.UsePiranha(options =>
     options.UseManager();
     options.UseTinyMCE();
     options.UseIdentity();
+    
+    // Seed the application with example data
+    Seed.RunAsync(options.Api).GetAwaiter().GetResult();
 });
 
 app.Run();

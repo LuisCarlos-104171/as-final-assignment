@@ -19,4 +19,9 @@ public static class ContentState
     public static string Unpublished { get; } = "unpublished";
     public static string Published { get; } = "published";
     public static string Draft { get; } = "draft";
+    
+    // New workflow states
+    public static string InReview { get; } = "in_review";
+    public static string Approved { get; } = "approved";
+    public static string Rejected { get; } = "rejected";
 }

@@ -10,7 +10,28 @@
     <title>@ViewData["Title"]</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400&family=Raleway:wght@700&display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <link rel="stylesheet" href="~/assets/css/style.min.css" asp-append-version="true">
+    
+    <style>
+        #logoutForm {
+            margin: 0;
+            padding: 0;
+        }
+        
+        #logoutForm button.nav-link {
+            background: none;
+            border: none;
+            color: rgba(0, 0, 0, 0.5);
+            text-decoration: none;
+            padding: 0.5rem 0;
+            display: block;
+        }
+        
+        #logoutForm button.nav-link:hover {
+            color: rgba(0, 0, 0, 0.7);
+        }
+    </style>
 
     @RenderSection("head", required: false)
 </head>
@@ -31,6 +52,29 @@
                         <a class="nav-link" href="@WebApp.Url(item)">@item.MenuTitle</a>
                     </li>
                     }
+                    <li class="nav-item">
+                        <a class="nav-link" href="~/submissions">Community Articles</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="~/article/submit">Submit Article</a>
+                    </li>
+                    @if (User.Identity.IsAuthenticated)
+                    {
+                    <li class="nav-item">
+                        <a class="nav-link" href="~/article/workflow">Article Workflow</a>
+                    </li>
+                    <li class="nav-item">
+                        <form asp-controller="Account" asp-action="Logout" method="post" id="logoutForm" class="navbar-right">
+                            <button type="submit" class="btn btn-link nav-link">Logout</button>
+                        </form>
+                    </li>
+                    }
+                    else
+                    {
+                    <li class="nav-item">
+                        <a class="nav-link" href="~/account/login">Login</a>
+                    </li>
+                    }
                 </ul>
             </div>
         </div>
@@ -41,5 +85,7 @@
     <script src="https://code.jquery.com/jquery-3.4.1.slim.min.js" integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js" integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6" crossorigin="anonymous"></script>
+    
+    @RenderSection("Scripts", required: false)
 </body>
 </html>

@@ -7,6 +7,7 @@ using MvcWeb.Models;
 namespace MvcWeb.Controllers;
 
 [ApiExplorerSettings(IgnoreApi = true)]
+[Route("")]
 public class CmsController : Controller
 {
     private readonly IApi _api;
@@ -20,6 +21,23 @@ public class CmsController : Controller
     {
         _api = api;
         _loader = loader;
+    }
+    
+    /// <summary>
+    /// Gets the index page
+    /// </summary>
+    [Route("cms")]
+    [Route("cms/index")]
+    public async Task<IActionResult> Index()
+    {
+        var startPage = await _api.Pages.GetStartpageAsync();
+        
+        if (startPage == null)
+        {
+            return NotFound();
+        }
+        
+        return RedirectToAction("Page", new { id = startPage.Id });
     }
 
     /// <summary>

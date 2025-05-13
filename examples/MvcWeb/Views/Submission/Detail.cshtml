@@ -1,0 +1,65 @@
+@model MvcWeb.Models.SubmittedArticle
+@{
+    ViewBag.Title = Model.Submission.Title;
+}
+
+<header class="page-header">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-10 offset-md-1">
+                <h1>@Model.Submission.Title</h1>
+                @if (!string.IsNullOrEmpty(Model.Submission.Excerpt))
+                {
+                    <p class="lead">@Model.Submission.Excerpt</p>
+                }
+            </div>
+        </div>
+    </div>
+</header>
+
+<div class="container body-container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <article>
+                <div class="article-info mb-5">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <span>By @Model.Submission.Author</span>
+                            <span class="mx-2">|</span>
+                            <span>Published @Model.Published?.ToString("MMMM dd, yyyy")</span>
+                        </div>
+                        <div>
+                            @if (!string.IsNullOrEmpty(Model.Submission.Category))
+                            {
+                                <span class="badge bg-primary">@Model.Submission.Category</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="article-content mb-5">
+                    @Html.Raw(Model.Submission.Content)
+                </div>
+                
+                @if (!string.IsNullOrEmpty(Model.Submission.Tags))
+                {
+                    <div class="article-tags mb-5">
+                        <h5>Tags</h5>
+                        <div>
+                            @foreach (var tag in Model.Submission.Tags.Split(',').Select(t => t.Trim()))
+                            {
+                                <span class="badge bg-secondary me-1">@tag</span>
+                            }
+                        </div>
+                    </div>
+                }
+                
+                <div class="article-actions mb-5">
+                    <a href="~/submissions" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Submissions
+                    </a>
+                </div>
+            </article>
+        </div>
+    </div>
+</div>

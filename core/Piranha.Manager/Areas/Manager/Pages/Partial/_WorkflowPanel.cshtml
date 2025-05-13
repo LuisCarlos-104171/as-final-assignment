@@ -1,0 +1,21 @@
+@inject Piranha.Manager.Services.WorkflowService WorkflowService
+@inject ManagerLocalizer Localizer
+@model Guid
+
+@{
+    var contentType = ViewContext.RouteData.Values["controller"]?.ToString()?.ToLower() ?? "unknown";
+    if (contentType == "pageapi") contentType = "page";
+    if (contentType == "postapi") contentType = "post";
+    
+    var userId = User.Identity?.Name ?? "anonymous";
+    var workflowModel = await WorkflowService.GetWorkflowTransitionsAsync(contentType, Model, userId);
+}
+
+<div class="card">
+    <div class="card-header">
+        <span>@Localizer.General["Workflow Status"]</span>
+    </div>
+    <div class="card-body">
+        @await Html.PartialAsync("~/Areas/Manager/Views/Shared/Partial/_WorkflowActions.cshtml", workflowModel)
+    </div>
+</div>

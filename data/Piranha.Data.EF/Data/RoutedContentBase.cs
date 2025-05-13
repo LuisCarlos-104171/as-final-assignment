@@ -73,4 +73,24 @@ public abstract class RoutedContentBase<T> : ContentBase<T> where T : ContentFie
     /// Gets/sets the publishe date.
     /// </summary>
     public DateTime? Published { get; set; }
+    
+    /// <summary>
+    /// Gets/sets the current workflow state.
+    /// </summary>
+    public string WorkflowState { get; set; } = "draft";
+
+    /// <summary>
+    /// Gets/sets the last reviewer Id.
+    /// </summary>
+    public Guid? LastReviewerId { get; set; }
+
+    /// <summary>
+    /// Gets/sets the last review date.
+    /// </summary>
+    public DateTime? LastReviewedOn { get; set; }
+
+    /// <summary>
+    /// Gets/sets review comments.
+    /// </summary>
+    public string ReviewComment { get; set; }
 }

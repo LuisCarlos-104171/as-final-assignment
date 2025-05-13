@@ -1,0 +1,157 @@
+@model Piranha.Manager.Models.WorkflowModel
+@inject Piranha.Manager.Services.WorkflowService WorkflowService
+
+<div class="workflow-actions">
+    <h5 class="mb-3">Workflow Status: <span class="workflow-status-@Model.CurrentState">@GetStateDisplayName(Model.CurrentState)</span></h5>
+
+    @if (Model.AvailableTransitions.Count > 0)
+    {
+        <div class="btn-group" role="group">
+            @foreach (var transition in Model.AvailableTransitions)
+            {
+                <button type="button" class="btn @transition.CssClass" data-toggle="modal" data-target="#workflowModal" 
+                       data-state="@transition.ToState">@transition.Name</button>
+            }
+        </div>
+    }
+    else
+    {
+        <p>No available workflow actions at this time.</p>
+    }
+</div>
+
+<!-- Workflow Modal -->
+<div class="modal fade" id="workflowModal" tabindex="-1" role="dialog" aria-labelledby="workflowModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="workflowModalLabel">Workflow Action</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="workflowForm">
+                    <input type="hidden" id="contentId" name="contentId" value="@Model.ContentId" />
+                    <input type="hidden" id="contentType" name="contentType" value="@Model.ContentType" />
+                    <input type="hidden" id="currentState" name="currentState" value="@Model.CurrentState" />
+                    <input type="hidden" id="targetState" name="targetState" value="" />
+                    
+                    <div class="form-group">
+                        <label for="workflowComment">Comment</label>
+                        <textarea id="workflowComment" name="comment" class="form-control" rows="3" 
+                                 placeholder="Add a comment about this workflow action"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="submitWorkflowAction">Submit</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@functions {
+    private string GetStateDisplayName(string state)
+    {
+        if (state == "draft")
+            return "Draft";
+        else if (state == "in_review")
+            return "In Review";
+        else if (state == "approved")
+            return "Approved";
+        else if (state == "rejected")
+            return "Rejected";
+        else if (state == "published")
+            return "Published";
+        else if (state == "unpublished")
+            return "Unpublished";
+        else if (state == "new")
+            return "New";
+        else
+            return state;
+    }
+}
+
+<style>
+    .workflow-actions {
+        margin-bottom: 1rem;
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-radius: 0.25rem;
+    }
+    
+    .workflow-status-draft {
+        color: #6c757d;
+    }
+    
+    .workflow-status-in_review {
+        color: #007bff;
+    }
+    
+    .workflow-status-approved {
+        color: #28a745;
+    }
+    
+    .workflow-status-rejected {
+        color: #dc3545;
+    }
+    
+    .workflow-status-published {
+        color: #28a745;
+        font-weight: bold;
+    }
+</style>
+
+<script>
+    $(document).ready(function () {
+        // Set the target state when the modal is shown
+        $('#workflowModal').on('show.bs.modal', function (event) {
+            var button = $(event.relatedTarget);
+            var targetState = button.data('state');
+            var modal = $(this);
+            modal.find('#targetState').val(targetState);
+            modal.find('.modal-title').text(button.text() + ' Content');
+        });
+        
+        // Submit the workflow action
+        $('#submitWorkflowAction').on('click', function () {
+            var formData = {
+                contentId: $('#contentId').val(),
+                contentType: $('#contentType').val(),
+                currentState: $('#currentState').val(),
+                targetState: $('#targetState').val(),
+                comment: $('#workflowComment').val()
+            };
+            
+            $.ajax({
+                url: '@Url.Action("PerformTransition", "Workflow", new { Area = "Manager" })',
+                type: 'POST',
+                data: JSON.stringify(formData),
+                contentType: 'application/json',
+                dataType: 'json',
+                success: function (response) {
+                    $('#workflowModal').modal('hide');
+                    // Show notification
+                    piranha.notifications.push({
+                        type: response.type,
+                        body: response.body
+                    });
+                    
+                    // Reload the page to reflect the new state
+                    setTimeout(function() {
+                        location.reload();
+                    }, 1000);
+                },
+                error: function (xhr, status, error) {
+                    $('#workflowModal').modal('hide');
+                    piranha.notifications.push({
+                        type: 'danger',
+                        body: 'An error occurred: ' + error
+                    });
+                }
+            });
+        });
+    });
+</script>
