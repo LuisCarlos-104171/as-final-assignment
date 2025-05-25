@@ -9,6 +9,7 @@
  */
 
 using Piranha.Manager.Models;
+using Piranha.Services;
 
 namespace Piranha.Manager.Services;
 
@@ -20,6 +21,7 @@ public class WorkflowService
     private readonly IApi _api;
     private readonly ManagerLocalizer _localizer;
     private readonly NotificationService _notificationService;
+    private readonly IWorkflowDefinitionService _workflowDefinitionService;
 
     /// <summary>
     /// Constructor.
@@ -27,11 +29,13 @@ public class WorkflowService
     /// <param name="api">The current API</param>
     /// <param name="localizer">The localizer</param>
     /// <param name="notificationService">The notification service</param>
-    public WorkflowService(IApi api, ManagerLocalizer localizer, NotificationService notificationService)
+    /// <param name="workflowDefinitionService">The workflow definition service</param>
+    public WorkflowService(IApi api, ManagerLocalizer localizer, NotificationService notificationService, IWorkflowDefinitionService workflowDefinitionService)
     {
         _api = api;
         _localizer = localizer;
         _notificationService = notificationService;
+        _workflowDefinitionService = workflowDefinitionService;
     }
 
     /// <summary>
@@ -72,7 +76,15 @@ public class WorkflowService
             .ToList();
 
         // Get all available transitions based on the current state and user permissions
-        model.AvailableTransitions = await GetAvailableTransitionsAsync(contentType, model.CurrentState, permissions);
+        var workflowTransitions = await _workflowDefinitionService.GetAvailableTransitionsAsync(contentType, model.CurrentState, permissions);
+        model.AvailableTransitions = workflowTransitions.Select(t => new WorkflowModel.WorkflowTransition
+        {
+            FromState = t.FromStateKey,
+            ToState = t.ToStateKey,
+            Name = t.Name,
+            Permission = t.RequiredPermission,
+            CssClass = t.CssClass
+        }).ToList();
 
         return model;
     }
@@ -93,10 +105,9 @@ public class WorkflowService
                 .ToList();
 
             // Validate the transition is allowed for this user
-            var transitions = await GetAvailableTransitionsAsync(model.ContentType, model.CurrentState, permissions);
-            var transition = transitions.FirstOrDefault(t => t.ToState == model.TargetState);
+            var isValidTransition = await _workflowDefinitionService.ValidateTransitionAsync(model.ContentType, model.CurrentState, model.TargetState, permissions);
 
-            if (transition == null)
+            if (!isValidTransition)
             {
                 return new StatusMessage
                 {
@@ -134,18 +145,20 @@ public class WorkflowService
                 await _api.Pages.SaveAsync(page);
 
                 // Create notification
+                var pageDisplayName = await GetStateDisplayNameAsync("page", model.TargetState);
                 await _notificationService.CreateNotificationAsync(
                     page.Id, 
                     "page", 
                     page.Title,
                     Guid.NewGuid(), // Generate a new ID since we don't depend on identity
                     "workflow",
-                    $"Page workflow state updated to {GetStateDisplayName(model.TargetState)}");
+                    $"Page workflow state updated to {pageDisplayName}");
 
+                var displayName = await GetStateDisplayNameAsync("page", model.TargetState);
                 return new StatusMessage
                 {
                     Type = StatusMessage.Success,
-                    Body = string.Format(_localizer.General["Page workflow state updated to {0}."], GetStateDisplayName(model.TargetState))
+                    Body = string.Format(_localizer.General["Page workflow state updated to {0}."], displayName)
                 };
             }
             else if (model.ContentType == "post")
@@ -176,18 +189,20 @@ public class WorkflowService
                 await _api.Posts.SaveAsync(post);
 
                 // Create notification
+                var postDisplayName = await GetStateDisplayNameAsync("post", model.TargetState);
                 await _notificationService.CreateNotificationAsync(
                     post.Id, 
                     "post", 
                     post.Title,
                     Guid.NewGuid(), // Generate a new ID since we don't depend on identity
                     "workflow",
-                    $"Post workflow state updated to {GetStateDisplayName(model.TargetState)}");
+                    $"Post workflow state updated to {postDisplayName}");
 
+                var postDisplayNameForMessage = await GetStateDisplayNameAsync("post", model.TargetState);
                 return new StatusMessage
                 {
                     Type = StatusMessage.Success,
-                    Body = string.Format(_localizer.General["Post workflow state updated to {0}."], GetStateDisplayName(model.TargetState))
+                    Body = string.Format(_localizer.General["Post workflow state updated to {0}."], postDisplayNameForMessage)
                 };
             }
 
@@ -207,147 +222,32 @@ public class WorkflowService
         }
     }
 
-    /// <summary>
-    /// Gets the available transitions for the current state and user permissions.
-    /// </summary>
-    private async Task<List<WorkflowModel.WorkflowTransition>> GetAvailableTransitionsAsync(string contentType, string currentState, List<string> permissions)
-    {
-        var transitions = new List<WorkflowModel.WorkflowTransition>();
-
-        // Set up permission prefixes based on content type
-        string submitPermission, approvePermission, rejectPermission, publishPermission;
-
-        if (contentType == "page")
-        {
-            submitPermission = WorkflowPermissions.PagesSubmitForReview;
-            approvePermission = WorkflowPermissions.PagesApprove;
-            rejectPermission = WorkflowPermissions.PagesReject;
-            publishPermission = Permission.PagesPublish;
-        }
-        else if (contentType == "post")
-        {
-            submitPermission = WorkflowPermissions.PostsSubmitForReview;
-            approvePermission = WorkflowPermissions.PostsApprove;
-            rejectPermission = WorkflowPermissions.PostsReject;
-            publishPermission = Permission.PostsPublish;
-        }
-        else
-        {
-            submitPermission = WorkflowPermissions.ContentSubmitForReview;
-            approvePermission = WorkflowPermissions.ContentApprove;
-            rejectPermission = WorkflowPermissions.ContentReject;
-            publishPermission = Permission.PagesPublish; // Default to page publish permission
-        }
-
-        // Define transitions based on current state
-        if (currentState == "draft" || currentState == "new")
-        {
-            // From Draft: can submit for review
-                if (permissions.Contains(submitPermission))
-                {
-                    transitions.Add(new WorkflowModel.WorkflowTransition
-                    {
-                        FromState = currentState,
-                        ToState = "in_review",
-                        Name = "Submit for Review",
-                        Permission = submitPermission,
-                        CssClass = "btn-primary"
-                    });
-                }
-        }
-        else if (currentState == "in_review")
-        {
-            // From InReview: can approve or reject
-            if (permissions.Contains(approvePermission))
-            {
-                transitions.Add(new WorkflowModel.WorkflowTransition
-                {
-                    FromState = currentState,
-                    ToState = "approved",
-                    Name = "Approve",
-                    Permission = approvePermission,
-                    CssClass = "btn-success"
-                });
-            }
-
-            if (permissions.Contains(rejectPermission))
-            {
-                transitions.Add(new WorkflowModel.WorkflowTransition
-                {
-                    FromState = currentState,
-                    ToState = "rejected",
-                    Name = "Reject",
-                    Permission = rejectPermission,
-                    CssClass = "btn-danger"
-                });
-            }
-        }
-        else if (currentState == "approved")
-        {
-            // From Approved: can publish
-            if (permissions.Contains(publishPermission))
-            {
-                transitions.Add(new WorkflowModel.WorkflowTransition
-                {
-                    FromState = currentState,
-                    ToState = "published",
-                    Name = "Publish",
-                    Permission = publishPermission,
-                    CssClass = "btn-success"
-                });
-            }
-        }
-        else if (currentState == "rejected")
-        {
-            // From Rejected: can resubmit to draft
-            transitions.Add(new WorkflowModel.WorkflowTransition
-            {
-                FromState = currentState,
-                ToState = "draft",
-                Name = "Back to Draft",
-                Permission = "Everyone",
-                CssClass = "btn-primary"
-            });
-        }
-        else if (currentState == "published")
-        {
-            // From Published: can unpublish to draft
-            if (permissions.Contains(publishPermission))
-            {
-                transitions.Add(new WorkflowModel.WorkflowTransition
-                {
-                    FromState = currentState,
-                    ToState = "draft",
-                    Name = "Unpublish to Draft",
-                    Permission = publishPermission,
-                    CssClass = "btn-warning"
-                });
-            }
-        }
-
-        return await Task.FromResult(transitions);
-    }
 
     /// <summary>
     /// Gets a user-friendly display name for a workflow state
     /// </summary>
-    private string GetStateDisplayName(string state)
+    private async Task<string> GetStateDisplayNameAsync(string contentType, string state)
     {
-        if (state == "draft")
-            return "Draft";
-        else if (state == "in_review")
-            return "In Review";
-        else if (state == "approved")
-            return "Approved";
-        else if (state == "rejected")
-            return "Rejected";
-        else if (state == "published")
-            return "Published";
-        else if (state == "unpublished")
-            return "Unpublished";
-        else if (state == "new")
-            return "New";
-        else
-            return state;
+        try
+        {
+            var workflow = await _workflowDefinitionService.GetDefaultByContentTypeAsync(contentType);
+            var workflowState = workflow?.States?.FirstOrDefault(s => s.Key == state);
+            return workflowState?.Name ?? state;
+        }
+        catch
+        {
+            // Fallback to default names if workflow service is not available
+            return state switch
+            {
+                "draft" => "Draft",
+                "in_review" => "In Review",
+                "approved" => "Approved",
+                "rejected" => "Rejected",
+                "published" => "Published",
+                "unpublished" => "Unpublished",
+                "new" => "New",
+                _ => state
+            };
+        }
     }
 }

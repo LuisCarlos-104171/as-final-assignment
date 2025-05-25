@@ -255,4 +255,157 @@
   <data name="Username and/or password are incorrect." xml:space="preserve">
     <value>Username and/or password are incorrect.</value>
   </data>
+  <data name="Workflow Definitions" xml:space="preserve">
+    <value>Workflow Definitions</value>
+  </data>
+  <data name="Workflows" xml:space="preserve">
+    <value>Workflows</value>
+  </data>
+  <data name="Add Workflow" xml:space="preserve">
+    <value>Add Workflow</value>
+  </data>
+  <data name="Edit Workflow" xml:space="preserve">
+    <value>Edit Workflow</value>
+  </data>
+  <data name="Manage editorial workflow definitions" xml:space="preserve">
+    <value>Manage editorial workflow definitions</value>
+  </data>
+  <data name="Create Default Workflow" xml:space="preserve">
+    <value>Create Default Workflow</value>
+  </data>
+  <data name="Create Your First Workflow" xml:space="preserve">
+    <value>Create Your First Workflow</value>
+  </data>
+  <data name="No workflow definitions found" xml:space="preserve">
+    <value>No workflow definitions found</value>
+  </data>
+  <data name="Content Types" xml:space="preserve">
+    <value>Content Types</value>
+  </data>
+  <data name="States" xml:space="preserve">
+    <value>States</value>
+  </data>
+  <data name="Transitions" xml:space="preserve">
+    <value>Transitions</value>
+  </data>
+  <data name="Status" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="Last Modified" xml:space="preserve">
+    <value>Last Modified</value>
+  </data>
+  <data name="Active" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="Inactive" xml:space="preserve">
+    <value>Inactive</value>
+  </data>
+  <data name="Default workflow for selected content types" xml:space="preserve">
+    <value>Default workflow for selected content types</value>
+  </data>
+  <data name="Basic Information" xml:space="preserve">
+    <value>Basic Information</value>
+  </data>
+  <data name="Initial State" xml:space="preserve">
+    <value>Initial State</value>
+  </data>
+  <data name="Select initial state" xml:space="preserve">
+    <value>Select initial state</value>
+  </data>
+  <data name="Workflow States" xml:space="preserve">
+    <value>Workflow States</value>
+  </data>
+  <data name="Add State" xml:space="preserve">
+    <value>Add State</value>
+  </data>
+  <data name="Workflow Transitions" xml:space="preserve">
+    <value>Workflow Transitions</value>
+  </data>
+  <data name="Add Transition" xml:space="preserve">
+    <value>Add Transition</value>
+  </data>
+  <data name="Key" xml:space="preserve">
+    <value>Key</value>
+  </data>
+  <data name="Color" xml:space="preserve">
+    <value>Color</value>
+  </data>
+  <data name="Icon" xml:space="preserve">
+    <value>Icon</value>
+  </data>
+  <data name="Initial State" xml:space="preserve">
+    <value>Initial State</value>
+  </data>
+  <data name="Published State" xml:space="preserve">
+    <value>Published State</value>
+  </data>
+  <data name="Final State" xml:space="preserve">
+    <value>Final State</value>
+  </data>
+  <data name="From State" xml:space="preserve">
+    <value>From State</value>
+  </data>
+  <data name="To State" xml:space="preserve">
+    <value>To State</value>
+  </data>
+  <data name="Select state" xml:space="preserve">
+    <value>Select state</value>
+  </data>
+  <data name="Permission" xml:space="preserve">
+    <value>Permission</value>
+  </data>
+  <data name="No permission required" xml:space="preserve">
+    <value>No permission required</value>
+  </data>
+  <data name="CSS Class" xml:space="preserve">
+    <value>CSS Class</value>
+  </data>
+  <data name="Requires Comment" xml:space="preserve">
+    <value>Requires Comment</value>
+  </data>
+  <data name="Send Notification" xml:space="preserve">
+    <value>Send Notification</value>
+  </data>
+  <data name="Pages" xml:space="preserve">
+    <value>Pages</value>
+  </data>
+  <data name="Posts" xml:space="preserve">
+    <value>Posts</value>
+  </data>
+  <data name="Create" xml:space="preserve">
+    <value>Create</value>
+  </data>
+  <data name="Please fill in all required fields" xml:space="preserve">
+    <value>Please fill in all required fields</value>
+  </data>
+  <data name="Default workflow created successfully" xml:space="preserve">
+    <value>Default workflow created successfully</value>
+  </data>
+  <data name="Failed to create workflow" xml:space="preserve">
+    <value>Failed to create workflow</value>
+  </data>
+  <data name="Failed to load workflow definitions" xml:space="preserve">
+    <value>Failed to load workflow definitions</value>
+  </data>
+  <data name="Are you sure you want to delete this workflow?" xml:space="preserve">
+    <value>Are you sure you want to delete this workflow?</value>
+  </data>
+  <data name="Workflow deleted successfully" xml:space="preserve">
+    <value>Workflow deleted successfully</value>
+  </data>
+  <data name="Failed to delete workflow" xml:space="preserve">
+    <value>Failed to delete workflow</value>
+  </data>
+  <data name="Failed to load workflow" xml:space="preserve">
+    <value>Failed to load workflow</value>
+  </data>
+  <data name="Failed to initialize workflow" xml:space="preserve">
+    <value>Failed to initialize workflow</value>
+  </data>
+  <data name="Workflow saved successfully" xml:space="preserve">
+    <value>Workflow saved successfully</value>
+  </data>
+  <data name="Failed to save workflow" xml:space="preserve">
+    <value>Failed to save workflow</value>
+  </data>
 </root>

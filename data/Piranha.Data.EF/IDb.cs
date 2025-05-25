@@ -213,6 +213,21 @@ public interface IDb : IDisposable
     DbSet<Data.Taxonomy> Taxonomies { get; set; }
 
     /// <summary>
+    /// Gets/sets the workflow definition set.
+    /// </summary>
+    DbSet<Data.WorkflowDefinition> WorkflowDefinitions { get; set; }
+    
+    /// <summary>
+    /// Gets/sets the workflow State set.
+    /// </summary>
+    DbSet<Data.WorkflowState> WorkflowStates { get; set; }
+    
+    /// <summary>
+    /// Gets/sets the workflow transition set.
+    /// </summary>
+    DbSet<Data.WorkflowTransition> WorkflowTransitions { get; set; }
+
+    /// <summary>
     /// Gets the entity set for the specified type.
     /// </summary>
     DbSet<T> Set<T>() where T : class;

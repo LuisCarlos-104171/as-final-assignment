@@ -1,0 +1,648 @@
+@page "~/manager/workflow-definition/{routeAction}/{id?}"
+@model WorkflowDefinitionEditViewModel
+@inject ManagerLocalizer Localizer
+@{
+    ViewBag.Title = Localizer.General["Edit Workflow"];
+    ViewBag.MenuItem = "WorkflowDefinitions";
+    var routeAction = ViewContext.RouteData.Values["routeAction"]?.ToString();
+    var isNew = routeAction == "add";
+}
+
+<div id="workflow-edit-view">
+    <div class="top">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">@Localizer.Menu["System"]</li>
+                <li class="breadcrumb-item"><a href="@Url.Content("~/manager/workflow-definitions")">@Localizer.Menu["Workflows"]</a></li>
+                <li class="breadcrumb-item active" aria-current="page">@(isNew ? Localizer.General["Add"] : Localizer.General["Edit"])</li>
+            </ol>
+        </nav>
+
+        <div class="container-fluid">
+            <div class="top-nav">
+                <button type="button" class="btn btn-success btn-labeled" onclick="workflowEdit.save()">
+                    <i class="fas fa-check"></i>@Localizer.General["Save"]
+                </button>
+                <a href="@Url.Content("~/manager/workflow-definitions")" class="btn btn-secondary btn-labeled">
+                    <i class="fas fa-times"></i>@Localizer.General["Cancel"]
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-12">
+                <form id="workflow-form">
+                    <!-- Basic Information Card -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h5 class="card-title"><i class="fas fa-info-circle"></i> @Localizer.General["Basic Information"]</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="workflow-name">@Localizer.General["Name"] *</label>
+                                        <input type="text" class="form-control" id="workflow-name" name="Name" required>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="initial-state">@Localizer.General["Initial State"] *</label>
+                                        <select class="form-control" id="initial-state" name="InitialState" required>
+                                            <option value="">@Localizer.General["Select initial state"]</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="workflow-description">@Localizer.General["Description"]</label>
+                                <textarea class="form-control" id="workflow-description" name="Description" rows="3"></textarea>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>@Localizer.General["Content Types"] *</label>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="content-type-page" name="ContentTypes" value="page">
+                                            <label class="form-check-label" for="content-type-page">
+                                                @Localizer.General["Pages"]
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="content-type-post" name="ContentTypes" value="post">
+                                            <label class="form-check-label" for="content-type-post">
+                                                @Localizer.General["Posts"]
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="content-type-content" name="ContentTypes" value="content">
+                                            <label class="form-check-label" for="content-type-content">
+                                                @Localizer.General["Content"]
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="is-default" name="IsDefault">
+                                            <label class="form-check-label" for="is-default">
+                                                @Localizer.General["Default workflow for selected content types"]
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="is-active" name="IsActive" checked>
+                                            <label class="form-check-label" for="is-active">
+                                                @Localizer.General["Active"]
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- States Card -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <div class="row">
+                                <div class="col">
+                                    <h5 class="card-title"><i class="fas fa-circle"></i> @Localizer.General["Workflow States"]</h5>
+                                </div>
+                                <div class="col-auto">
+                                    <button type="button" class="btn btn-primary btn-sm" onclick="workflowEdit.addState()">
+                                        <i class="fas fa-plus"></i> @Localizer.General["Add State"]
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="states-container">
+                                <!-- States will be dynamically added here -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Transitions Card -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <div class="row">
+                                <div class="col">
+                                    <h5 class="card-title"><i class="fas fa-arrow-right"></i> @Localizer.General["Workflow Transitions"]</h5>
+                                </div>
+                                <div class="col-auto">
+                                    <button type="button" class="btn btn-primary btn-sm" onclick="workflowEdit.addTransition()">
+                                        <i class="fas fa-plus"></i> @Localizer.General["Add Transition"]
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="transitions-container">
+                                <!-- Transitions will be dynamically added here -->
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- State Template -->
+<template id="state-template">
+    <div class="state-item border rounded p-3 mb-3" data-state-index="">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="form-group">
+                    <label>@Localizer.General["Key"] *</label>
+                    <input type="text" class="form-control state-key" name="States[].Key" required>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="form-group">
+                    <label>@Localizer.General["Name"] *</label>
+                    <input type="text" class="form-control state-name" name="States[].Name" required>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label>@Localizer.General["Color"]</label>
+                    <input type="color" class="form-control state-color" name="States[].Color" value="#6c757d">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label>@Localizer.General["Icon"]</label>
+                    <select class="form-control state-icon" name="States[].Icon">
+                        <option value="fas fa-circle">Circle</option>
+                        <option value="fas fa-edit">Edit</option>
+                        <option value="fas fa-eye">Eye</option>
+                        <option value="fas fa-check">Check</option>
+                        <option value="fas fa-times">Times</option>
+                        <option value="fas fa-globe">Globe</option>
+                        <option value="fas fa-clock">Clock</option>
+                    </select>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label>&nbsp;</label>
+                    <div>
+                        <button type="button" class="btn btn-danger btn-sm" onclick="workflowEdit.removeState(this)">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-12">
+                <div class="form-group">
+                    <label>@Localizer.General["Description"]</label>
+                    <input type="text" class="form-control state-description" name="States[].Description">
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-4">
+                <div class="form-check">
+                    <input class="form-check-input state-initial" type="checkbox" name="States[].IsInitial">
+                    <label class="form-check-label">@Localizer.General["Initial State"]</label>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="form-check">
+                    <input class="form-check-input state-published" type="checkbox" name="States[].IsPublished">
+                    <label class="form-check-label">@Localizer.General["Published State"]</label>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="form-check">
+                    <input class="form-check-input state-final" type="checkbox" name="States[].IsFinal">
+                    <label class="form-check-label">@Localizer.General["Final State"]</label>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" class="state-id" name="States[].Id">
+        <input type="hidden" class="state-sort-order" name="States[].SortOrder">
+    </div>
+</template>
+
+<!-- Transition Template -->
+<template id="transition-template">
+    <div class="transition-item border rounded p-3 mb-3" data-transition-index="">
+        <div class="row">
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label>@Localizer.General["From State"] *</label>
+                    <select class="form-control transition-from" name="Transitions[].FromStateKey" required>
+                        <option value="">@Localizer.General["Select state"]</option>
+                    </select>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label>@Localizer.General["To State"] *</label>
+                    <select class="form-control transition-to" name="Transitions[].ToStateKey" required>
+                        <option value="">@Localizer.General["Select state"]</option>
+                    </select>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="form-group">
+                    <label>@Localizer.General["Name"] *</label>
+                    <input type="text" class="form-control transition-name" name="Transitions[].Name" required>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="form-group">
+                    <label>@Localizer.General["Permission"]</label>
+                    <select class="form-control transition-permission" name="Transitions[].RequiredPermission">
+                        <option value="">@Localizer.General["No permission required"]</option>
+                        <option value="PiranhaContentSubmitForReview">Submit for Review</option>
+                        <option value="PiranhaContentApprove">Approve Content</option>
+                        <option value="PiranhaContentReject">Reject Content</option>
+                        <option value="PiranhaContentPublish">Publish Content</option>
+                    </select>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-group">
+                    <label>&nbsp;</label>
+                    <div>
+                        <button type="button" class="btn btn-danger btn-sm" onclick="workflowEdit.removeTransition(this)">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="form-group">
+                    <label>@Localizer.General["Description"]</label>
+                    <input type="text" class="form-control transition-description" name="Transitions[].Description">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="form-group">
+                    <label>@Localizer.General["CSS Class"]</label>
+                    <select class="form-control transition-css" name="Transitions[].CssClass">
+                        <option value="btn-primary">Primary (Blue)</option>
+                        <option value="btn-success">Success (Green)</option>
+                        <option value="btn-danger">Danger (Red)</option>
+                        <option value="btn-warning">Warning (Yellow)</option>
+                        <option value="btn-info">Info (Cyan)</option>
+                        <option value="btn-secondary">Secondary (Gray)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="form-group">
+                    <label>@Localizer.General["Icon"]</label>
+                    <select class="form-control transition-icon" name="Transitions[].Icon">
+                        <option value="fas fa-arrow-right">Arrow Right</option>
+                        <option value="fas fa-paper-plane">Paper Plane</option>
+                        <option value="fas fa-check">Check</option>
+                        <option value="fas fa-times">Times</option>
+                        <option value="fas fa-globe">Globe</option>
+                        <option value="fas fa-undo">Undo</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="form-check">
+                    <input class="form-check-input transition-requires-comment" type="checkbox" name="Transitions[].RequiresComment">
+                    <label class="form-check-label">@Localizer.General["Requires Comment"]</label>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="form-check">
+                    <input class="form-check-input transition-send-notification" type="checkbox" name="Transitions[].SendNotification" checked>
+                    <label class="form-check-label">@Localizer.General["Send Notification"]</label>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" class="transition-id" name="Transitions[].Id">
+        <input type="hidden" class="transition-sort-order" name="Transitions[].SortOrder">
+    </div>
+</template>
+
+
+@section script {
+<script>
+    var workflowEdit = {
+        data: null,
+        stateIndex: 0,
+        transitionIndex: 0,
+        
+        init: function() {
+            var routeAction = '@ViewContext.RouteData.Values["routeAction"]';
+            var id = '@ViewContext.RouteData.Values["id"]';
+            if (routeAction === 'edit' && id) {
+                this.load(id);
+            } else {
+                this.loadNew();
+            }
+        },
+        
+        load: function(id) {
+            $.ajax({
+                url: piranha.baseUrl + 'manager/api/workflow-definitions/' + id,
+                type: 'GET',
+                success: function(data) {
+                    workflowEdit.data = data;
+                    workflowEdit.populateForm();
+                },
+                error: function() {
+                    piranha.notifications.push({
+                        body: '@Localizer.General["Failed to load workflow"]',
+                        type: 'danger'
+                    });
+                }
+            });
+        },
+        
+        loadNew: function() {
+            $.ajax({
+                url: piranha.baseUrl + 'manager/api/workflow-definitions/new',
+                type: 'GET',
+                success: function(data) {
+                    workflowEdit.data = data;
+                    workflowEdit.populateForm();
+                },
+                error: function() {
+                    piranha.notifications.push({
+                        body: '@Localizer.General["Failed to initialize workflow"]',
+                        type: 'danger'
+                    });
+                }
+            });
+        },
+        
+        populateForm: function() {
+            if (!this.data) return;
+            
+            $('#workflow-name').val(this.data.name || '');
+            $('#workflow-description').val(this.data.description || '');
+            $('#is-default').prop('checked', this.data.isDefault || false);
+            $('#is-active').prop('checked', this.data.isActive !== false);
+            
+            // Set content types
+            if (this.data.contentTypes) {
+                this.data.contentTypes.forEach(function(type) {
+                    $('#content-type-' + type).prop('checked', true);
+                });
+            }
+            
+            // Add states
+            if (this.data.states) {
+                this.data.states.forEach(function(state) {
+                    workflowEdit.addState(state);
+                });
+            }
+            
+            // Add transitions
+            if (this.data.transitions) {
+                this.data.transitions.forEach(function(transition) {
+                    workflowEdit.addTransition(transition);
+                });
+            }
+            
+            this.updateInitialStateOptions();
+            $('#initial-state').val(this.data.initialState || '');
+        },
+        
+        addState: function(stateData) {
+            var template = document.getElementById('state-template').content.cloneNode(true);
+            var container = template.querySelector('.state-item');
+            container.setAttribute('data-state-index', this.stateIndex);
+            
+            // Update input names with index
+            this.updateInputNames(container, 'States', this.stateIndex);
+            
+            if (stateData) {
+                container.querySelector('.state-key').value = stateData.key || '';
+                container.querySelector('.state-name').value = stateData.name || '';
+                container.querySelector('.state-description').value = stateData.description || '';
+                container.querySelector('.state-color').value = stateData.color || '#6c757d';
+                container.querySelector('.state-icon').value = stateData.icon || 'fas fa-circle';
+                container.querySelector('.state-initial').checked = stateData.isInitial || false;
+                container.querySelector('.state-published').checked = stateData.isPublished || false;
+                container.querySelector('.state-final').checked = stateData.isFinal || false;
+                container.querySelector('.state-id').value = stateData.id || '';
+                container.querySelector('.state-sort-order').value = stateData.sortOrder || this.stateIndex + 1;
+            } else {
+                container.querySelector('.state-sort-order').value = this.stateIndex + 1;
+            }
+            
+            $('#states-container').append(container);
+            this.stateIndex++;
+            this.updateStateSelectors();
+        },
+        
+        addTransition: function(transitionData) {
+            var template = document.getElementById('transition-template').content.cloneNode(true);
+            var container = template.querySelector('.transition-item');
+            container.setAttribute('data-transition-index', this.transitionIndex);
+            
+            // Update input names with index
+            this.updateInputNames(container, 'Transitions', this.transitionIndex);
+            
+            if (transitionData) {
+                container.querySelector('.transition-from').value = transitionData.fromStateKey || '';
+                container.querySelector('.transition-to').value = transitionData.toStateKey || '';
+                container.querySelector('.transition-name').value = transitionData.name || '';
+                container.querySelector('.transition-description').value = transitionData.description || '';
+                container.querySelector('.transition-permission').value = transitionData.requiredPermission || '';
+                container.querySelector('.transition-css').value = transitionData.cssClass || 'btn-primary';
+                container.querySelector('.transition-icon').value = transitionData.icon || 'fas fa-arrow-right';
+                container.querySelector('.transition-requires-comment').checked = transitionData.requiresComment || false;
+                container.querySelector('.transition-send-notification').checked = transitionData.sendNotification !== false;
+                container.querySelector('.transition-id').value = transitionData.id || '';
+                container.querySelector('.transition-sort-order').value = transitionData.sortOrder || this.transitionIndex + 1;
+            } else {
+                container.querySelector('.transition-sort-order').value = this.transitionIndex + 1;
+            }
+            
+            $('#transitions-container').append(container);
+            this.transitionIndex++;
+            this.updateStateSelectors();
+        },
+        
+        removeState: function(button) {
+            $(button).closest('.state-item').remove();
+            this.updateStateSelectors();
+            this.updateInitialStateOptions();
+        },
+        
+        removeTransition: function(button) {
+            $(button).closest('.transition-item').remove();
+        },
+        
+        updateInputNames: function(container, prefix, index) {
+            container.querySelectorAll('input, select').forEach(function(input) {
+                var name = input.getAttribute('name');
+                if (name && name.includes('[]')) {
+                    input.setAttribute('name', name.replace('[]', '[' + index + ']'));
+                }
+            });
+        },
+        
+        updateStateSelectors: function() {
+            var states = [];
+            $('.state-item').each(function() {
+                var key = $(this).find('.state-key').val();
+                var name = $(this).find('.state-name').val();
+                if (key) {
+                    states.push({ key: key, name: name || key });
+                }
+            });
+            
+            $('.transition-from, .transition-to').each(function() {
+                var currentValue = $(this).val();
+                $(this).empty().append('<option value="">@Localizer.General["Select state"]</option>');
+                states.forEach(function(state) {
+                    $(this).append('<option value="' + state.key + '">' + state.name + '</option>');
+                }, this);
+                $(this).val(currentValue);
+            });
+        },
+        
+        updateInitialStateOptions: function() {
+            var states = [];
+            $('.state-item').each(function() {
+                var key = $(this).find('.state-key').val();
+                var name = $(this).find('.state-name').val();
+                if (key) {
+                    states.push({ key: key, name: name || key });
+                }
+            });
+            
+            var currentValue = $('#initial-state').val();
+            $('#initial-state').empty().append('<option value="">@Localizer.General["Select initial state"]</option>');
+            states.forEach(function(state) {
+                $('#initial-state').append('<option value="' + state.key + '">' + state.name + '</option>');
+            });
+            $('#initial-state').val(currentValue);
+        },
+        
+        save: function() {
+            var formData = this.serializeForm();
+            
+            $.ajax({
+                url: piranha.baseUrl + 'manager/api/workflow-definitions/save',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(formData),
+                success: function() {
+                    piranha.notifications.push({
+                        body: '@Localizer.General["Workflow saved successfully"]',
+                        type: 'success'
+                    });
+                    window.location.href = piranha.baseUrl + 'manager/workflow-definitions';
+                },
+                error: function(xhr) {
+                    var message = '@Localizer.General["Failed to save workflow"]';
+                    if (xhr.responseJSON && xhr.responseJSON.body) {
+                        message = xhr.responseJSON.body;
+                    }
+                    piranha.notifications.push({
+                        body: message,
+                        type: 'danger'
+                    });
+                }
+            });
+        },
+        
+        serializeForm: function() {
+            var data = {
+                id: this.data ? this.data.id : '',
+                name: $('#workflow-name').val(),
+                description: $('#workflow-description').val(),
+                isDefault: $('#is-default').is(':checked'),
+                isActive: $('#is-active').is(':checked'),
+                initialState: $('#initial-state').val(),
+                contentTypes: [],
+                states: [],
+                transitions: []
+            };
+            
+            // Get content types
+            $('input[name="ContentTypes"]:checked').each(function() {
+                data.contentTypes.push($(this).val());
+            });
+            
+            // Get states
+            $('.state-item').each(function(index) {
+                var state = {
+                    id: $(this).find('.state-id').val(),
+                    key: $(this).find('.state-key').val(),
+                    name: $(this).find('.state-name').val(),
+                    description: $(this).find('.state-description').val(),
+                    color: $(this).find('.state-color').val(),
+                    icon: $(this).find('.state-icon').val(),
+                    isInitial: $(this).find('.state-initial').is(':checked'),
+                    isPublished: $(this).find('.state-published').is(':checked'),
+                    isFinal: $(this).find('.state-final').is(':checked'),
+                    sortOrder: index + 1
+                };
+                data.states.push(state);
+            });
+            
+            // Get transitions
+            $('.transition-item').each(function(index) {
+                var transition = {
+                    id: $(this).find('.transition-id').val(),
+                    fromStateKey: $(this).find('.transition-from').val(),
+                    toStateKey: $(this).find('.transition-to').val(),
+                    name: $(this).find('.transition-name').val(),
+                    description: $(this).find('.transition-description').val(),
+                    requiredPermission: $(this).find('.transition-permission').val(),
+                    cssClass: $(this).find('.transition-css').val(),
+                    icon: $(this).find('.transition-icon').val(),
+                    requiresComment: $(this).find('.transition-requires-comment').is(':checked'),
+                    sendNotification: $(this).find('.transition-send-notification').is(':checked'),
+                    sortOrder: index + 1
+                };
+                data.transitions.push(transition);
+            });
+            
+            return data;
+        }
+    };
+    
+    // Ensure jQuery is available
+    if (typeof $ !== 'undefined') {
+        $(document).ready(function() {
+            workflowEdit.init();
+            
+            // Update state selectors when state keys change
+            $(document).on('input', '.state-key, .state-name', function() {
+                workflowEdit.updateStateSelectors();
+                workflowEdit.updateInitialStateOptions();
+            });
+        });
+    } else {
+        console.error('jQuery is not loaded');
+        // Fallback - try again after a short delay
+        setTimeout(function() {
+            if (typeof $ !== 'undefined') {
+                $(document).ready(function() {
+                    workflowEdit.init();
+                    
+                    // Update state selectors when state keys change
+                    $(document).on('input', '.state-key, .state-name', function() {
+                        workflowEdit.updateStateSelectors();
+                        workflowEdit.updateInitialStateOptions();
+                    });
+                });
+            }
+        }, 100);
+    }
+</script>
+}

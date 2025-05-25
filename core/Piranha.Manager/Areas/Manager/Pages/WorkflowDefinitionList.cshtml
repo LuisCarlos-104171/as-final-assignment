@@ -1,0 +1,266 @@
+@page "/manager/workflow-definitions"
+@model WorkflowDefinitionListViewModel
+@inject ManagerLocalizer Localizer
+@{
+    ViewBag.Title = Localizer.General["Workflow Definitions"];
+    ViewBag.MenuItem = "WorkflowDefinitions";
+}
+
+<div id="workflow-definitions-view">
+    <div class="top">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">@Localizer.Menu["System"]</li>
+                <li class="breadcrumb-item active" aria-current="page">@Localizer.Menu["Workflows"]</li>
+            </ol>
+        </nav>
+
+        <div class="container-fluid">
+            <div class="top-nav">
+                <a href="@Url.Content("~/manager/workflow-definition/add")" class="btn btn-primary btn-labeled">
+                    <i class="fas fa-plus"></i>@Localizer.General["Add"]
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="row">
+                            <div class="col-sm-6">
+                                <h4 class="card-title">@Localizer.General["Workflow Definitions"]</h4>
+                            </div>
+                            <div class="col-sm-6 text-right">
+                                <button type="button" class="btn btn-success btn-sm" onclick="workflowDefinitions.createDefault()">
+                                    <i class="fas fa-magic"></i> @Localizer.General["Create Default Workflow"]
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table id="workflow-definitions-table" class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>@Localizer.General["Name"]</th>
+                                        <th>@Localizer.General["Content Types"]</th>
+                                        <th>@Localizer.General["States"]</th>
+                                        <th>@Localizer.General["Transitions"]</th>
+                                        <th>@Localizer.General["Status"]</th>
+                                        <th>@Localizer.General["Last Modified"]</th>
+                                        <th width="80"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Data will be loaded via AJAX -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Default Workflow Modal -->
+<div class="modal fade" id="defaultWorkflowModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">@Localizer.General["Create Default Workflow"]</h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="default-workflow-form">
+                    <div class="form-group">
+                        <label for="workflow-name">@Localizer.General["Name"]</label>
+                        <input type="text" class="form-control" id="workflow-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>@Localizer.General["Content Types"]</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="content-type-page" value="page">
+                            <label class="form-check-label" for="content-type-page">
+                                @Localizer.General["Pages"]
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="content-type-post" value="post">
+                            <label class="form-check-label" for="content-type-post">
+                                @Localizer.General["Posts"]
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="content-type-content" value="content">
+                            <label class="form-check-label" for="content-type-content">
+                                @Localizer.General["Content"]
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">@Localizer.General["Cancel"]</button>
+                <button type="button" class="btn btn-success" onclick="workflowDefinitions.saveDefault()">@Localizer.General["Create"]</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+@section script {
+<script>
+    var workflowDefinitions = {
+        load: function() {
+            $.ajax({
+                url: piranha.baseUrl + 'manager/api/workflow-definitions',
+                type: 'GET',
+                success: function(data) {
+                    var tbody = $('#workflow-definitions-table tbody');
+                    tbody.empty();
+                    
+                    if (data.items && data.items.length > 0) {
+                        data.items.forEach(function(item) {
+                            var statusBadge = item.isActive 
+                                ? '<span class="badge badge-success">@Localizer.General["Active"]</span>'
+                                : '<span class="badge badge-secondary">@Localizer.General["Inactive"]</span>';
+                            
+                            if (item.isDefault) {
+                                statusBadge += ' <span class="badge badge-primary">@Localizer.General["Default"]</span>';
+                            }
+                            
+                            var row = `
+                                <tr>
+                                    <td><strong>${item.name}</strong><br><small class="text-muted">${item.description || ''}</small></td>
+                                    <td>${item.contentTypesDisplay}</td>
+                                    <td><span class="badge badge-info">${item.stateCount}</span></td>
+                                    <td><span class="badge badge-info">${item.transitionCount}</span></td>
+                                    <td>${statusBadge}</td>
+                                    <td><small>${new Date(item.lastModified).toLocaleDateString()}</small></td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <a href="${piranha.baseUrl}manager/workflow-definition/edit/${item.id}" class="btn btn-sm btn-primary">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-danger" onclick="workflowDefinitions.delete('${item.id}')">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                            tbody.append(row);
+                        });
+                    } else {
+                        tbody.append(`
+                            <tr>
+                                <td colspan="7" class="text-center text-muted">
+                                    <p>@Localizer.General["No workflow definitions found"]</p>
+                                    <button type="button" class="btn btn-primary" onclick="workflowDefinitions.createDefault()">
+                                        <i class="fas fa-plus"></i> @Localizer.General["Create Your First Workflow"]
+                                    </button>
+                                </td>
+                            </tr>
+                        `);
+                    }
+                },
+                error: function() {
+                    piranha.notifications.push({
+                        body: '@Localizer.General["Failed to load workflow definitions"]',
+                        type: 'danger'
+                    });
+                }
+            });
+        },
+        
+        createDefault: function() {
+            $('#defaultWorkflowModal').modal('show');
+        },
+        
+        saveDefault: function() {
+            var name = $('#workflow-name').val();
+            var contentTypes = [];
+            
+            $('input[type="checkbox"]:checked').each(function() {
+                contentTypes.push($(this).val());
+            });
+            
+            if (!name || contentTypes.length === 0) {
+                piranha.notifications.push({
+                    body: '@Localizer.General["Please fill in all required fields"]',
+                    type: 'danger'
+                });
+                return;
+            }
+            
+            $.ajax({
+                url: piranha.baseUrl + 'manager/api/workflow-definitions/create-default',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    name: name,
+                    contentTypes: contentTypes
+                }),
+                success: function(data) {
+                    $('#defaultWorkflowModal').modal('hide');
+                    piranha.notifications.push({
+                        body: '@Localizer.General["Default workflow created successfully"]',
+                        type: 'success'
+                    });
+                    workflowDefinitions.load();
+                },
+                error: function() {
+                    piranha.notifications.push({
+                        body: '@Localizer.General["Failed to create workflow"]',
+                        type: 'danger'
+                    });
+                }
+            });
+        },
+        
+        delete: function(id) {
+            if (confirm('@Localizer.General["Are you sure you want to delete this workflow?"]')) {
+                $.ajax({
+                    url: piranha.baseUrl + 'manager/api/workflow-definitions/' + id,
+                    type: 'DELETE',
+                    success: function() {
+                        piranha.notifications.push({
+                            body: '@Localizer.General["Workflow deleted successfully"]',
+                            type: 'success'
+                        });
+                        workflowDefinitions.load();
+                    },
+                    error: function() {
+                        piranha.notifications.push({
+                            body: '@Localizer.General["Failed to delete workflow"]',
+                            type: 'danger'
+                        });
+                    }
+                });
+            }
+        }
+    };
+    
+    // Ensure jQuery is available
+    if (typeof $ !== 'undefined') {
+        $(document).ready(function() {
+            workflowDefinitions.load();
+        });
+    } else {
+        console.error('jQuery is not loaded');
+        // Fallback - try again after a short delay
+        setTimeout(function() {
+            if (typeof $ !== 'undefined') {
+                $(document).ready(function() {
+                    workflowDefinitions.load();
+                });
+            }
+        }, 100);
+    }
+</script>
+}

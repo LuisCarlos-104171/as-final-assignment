@@ -51,4 +51,7 @@
   <data name="Users" xml:space="preserve">
     <value>Users</value>
   </data>
+  <data name="Workflows" xml:space="preserve">
+    <value>Workflows</value>
+  </data>
 </root>

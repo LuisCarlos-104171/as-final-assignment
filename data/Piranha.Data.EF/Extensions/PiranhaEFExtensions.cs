@@ -83,6 +83,7 @@ public static class PiranhaEFExtensions
         services.Add(new ServiceDescriptor(typeof(IPostTypeRepository), typeof(PostTypeRepository), scope));
         services.Add(new ServiceDescriptor(typeof(ISiteRepository), typeof(SiteRepository), scope));
         services.Add(new ServiceDescriptor(typeof(ISiteTypeRepository), typeof(SiteTypeRepository), scope));
+        services.Add(new ServiceDescriptor(typeof(IWorkflowRepository), typeof(WorkflowRepository), scope));
 
         // Register services
         services.Add(new ServiceDescriptor(typeof(IContentServiceFactory), typeof(ContentServiceFactory), ServiceLifetime.Singleton));

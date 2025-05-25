@@ -222,6 +222,21 @@ public abstract class Db<T> : DbContext, IDb where T : Db<T>
     public DbSet<Data.Taxonomy> Taxonomies { get; set; }
 
     /// <summary>
+    /// Gets/sets the workflow definition set.
+    /// </summary>
+    public DbSet<Data.WorkflowDefinition> WorkflowDefinitions { get; set; }
+
+    /// <summary>
+    /// Gets/sets the workflow state set.
+    /// </summary>
+    public DbSet<Data.WorkflowState> WorkflowStates { get; set; }
+
+    /// <summary>
+    /// Gets/sets the workflow transition set.
+    /// </summary>
+    public DbSet<Data.WorkflowTransition> WorkflowTransitions { get; set; }
+
+    /// <summary>
     /// Default constructor.
     /// </summary>
     /// <param name="options">Configuration options</param>

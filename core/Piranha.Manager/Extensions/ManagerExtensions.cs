@@ -55,6 +55,7 @@ public static class ManagerModuleExtensions
         services.AddScoped<PostService>();
         services.AddScoped<SiteService>();
         services.AddScoped<WorkflowService>();
+        services.AddScoped<WorkflowDefinitionManagerService>();
         services.AddScoped<NotificationService>();
 
         // Add localization service

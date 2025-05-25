@@ -74,7 +74,12 @@ public sealed class Module : IModule
         new PermissionItem { Name = Permission.SitesAdd, Title = "Add Sites", Category = "Sites" },
         new PermissionItem { Name = Permission.SitesDelete, Title = "Delete Sites", Category = "Sites" },
         new PermissionItem { Name = Permission.SitesEdit, Title = "Edit Sites", Category = "Sites" },
-        new PermissionItem { Name = Permission.SitesSave, Title = "Save Sites", Category = "Sites" }
+        new PermissionItem { Name = Permission.SitesSave, Title = "Save Sites", Category = "Sites" },
+        // Workflow Definition Management Permissions
+        new PermissionItem { Name = WorkflowManagementPermissions.WorkflowDefinitions, Title = "List Workflow Definitions", Category = "Workflow Management" },
+        new PermissionItem { Name = WorkflowManagementPermissions.WorkflowDefinitionsAdd, Title = "Add Workflow Definitions", Category = "Workflow Management" },
+        new PermissionItem { Name = WorkflowManagementPermissions.WorkflowDefinitionsEdit, Title = "Edit Workflow Definitions", Category = "Workflow Management" },
+        new PermissionItem { Name = WorkflowManagementPermissions.WorkflowDefinitionsDelete, Title = "Delete Workflow Definitions", Category = "Workflow Management" }
     };
 
     /// <summary>
