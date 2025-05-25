@@ -52,20 +52,17 @@
                         <a class="nav-link" href="@WebApp.Url(item)">@item.MenuTitle</a>
                     </li>
                     }
-                    <li class="nav-item">
-                        <a class="nav-link" href="~/submissions">Community Articles</a>
-                    </li>
+                    @if (User.Identity.IsAuthenticated)
+                    {
                     <li class="nav-item">
                         <a class="nav-link" href="~/article/submit">Submit Article</a>
                     </li>
-                    @if (User.Identity.IsAuthenticated)
-                    {
                     <li class="nav-item">
                         <a class="nav-link" href="~/article/workflow">Article Workflow</a>
                     </li>
                     <li class="nav-item">
                         <form asp-controller="Account" asp-action="Logout" method="post" id="logoutForm" class="navbar-right">
-                            <button type="submit" class="btn btn-link nav-link">Logout</button>
+                            <button type="submit" class="nav-link">LOGOUT</button>
                         </form>
                     </li>
                     }

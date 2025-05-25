@@ -53,9 +53,16 @@ piranha.useredit= new Vue({
             })
             .then(function (response) {
                 ok = response.ok;
+                if (ok && self.isNew) {
+                    // For new users, redirect immediately to user listing
+                    window.location.href = piranha.baseUrl + "manager/users";
+                    return;
+                }
                 return response.json();
             })
             .then(function (result) {
+                if (result === undefined) return; // Skip if we already redirected
+                
                 if (ok) {
                     self.bind(result);
                     

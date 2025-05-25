@@ -36,6 +36,7 @@ namespace MvcWeb.Controllers
         /// </summary>
         [Route("submit")]
         [HttpGet]
+        [Authorize]
         public async Task<IActionResult> Submit()
         {
             // Get the default blog
@@ -58,6 +59,7 @@ namespace MvcWeb.Controllers
         /// </summary>
         [Route("submit")]
         [HttpPost]
+        [Authorize]
         public async Task<IActionResult> Submit(ArticleSubmissionModel model, Guid blogId)
         {
             if (ModelState.IsValid)
