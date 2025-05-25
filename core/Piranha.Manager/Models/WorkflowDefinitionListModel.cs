@@ -8,7 +8,7 @@
  *
  */
 
-namespace Piranha.Manager.Models.Workflow;
+namespace Piranha.Manager.Models;
 
 /// <summary>
 /// Model for listing workflow definitions in the manager.

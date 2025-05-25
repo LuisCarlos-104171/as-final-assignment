@@ -11,7 +11,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Piranha.Manager.Models;
-using Piranha.Manager.Models.Workflow;
 using Piranha.Manager.Services;
 
 namespace Piranha.Manager.Controllers;
@@ -80,7 +79,7 @@ public class WorkflowDefinitionApiController : Controller
     /// <param name="model">The workflow definition</param>
     /// <returns>The result</returns>
     [HttpPost("save")]
-    public async Task<IActionResult> Save([FromBody] Models.Workflow.WorkflowDefinitionEditModel model)
+    public async Task<IActionResult> Save([FromBody] WorkflowDefinitionEditModel model)
     {
         if (!ModelState.IsValid)
         {

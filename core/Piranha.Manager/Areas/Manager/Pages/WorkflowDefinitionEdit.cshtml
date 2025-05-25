@@ -1,5 +1,5 @@
 @page "~/manager/workflow-definition/{routeAction}/{id?}"
-@model WorkflowDefinitionEditViewModel
+@model Piranha.Manager.Models.WorkflowDefinitionEditViewModel
 @inject ManagerLocalizer Localizer
 @{
     ViewBag.Title = Localizer.General["Edit Workflow"];
@@ -387,6 +387,8 @@
         populateForm: function() {
             if (!this.data) return;
             
+            this.isLoading = true;
+            
             $('#workflow-name').val(this.data.name || '');
             $('#workflow-description').val(this.data.description || '');
             $('#is-default').prop('checked', this.data.isDefault || false);
@@ -413,6 +415,9 @@
                 });
             }
             
+            // Update all state selectors after all states and transitions are loaded
+            this.isLoading = false;
+            this.updateStateSelectors();
             this.updateInitialStateOptions();
             $('#initial-state').val(this.data.initialState || '');
         },
@@ -442,7 +447,11 @@
             
             $('#states-container').append(container);
             this.stateIndex++;
-            this.updateStateSelectors();
+            
+            // Only update state selectors if we're not in the middle of loading data
+            if (!this.isLoading) {
+                this.updateStateSelectors();
+            }
         },
         
         addTransition: function(transitionData) {
@@ -454,8 +463,10 @@
             this.updateInputNames(container, 'Transitions', this.transitionIndex);
             
             if (transitionData) {
-                container.querySelector('.transition-from').value = transitionData.fromStateKey || '';
-                container.querySelector('.transition-to').value = transitionData.toStateKey || '';
+                // Store the data to be applied after state selectors are updated
+                container.setAttribute('data-from-state', transitionData.fromStateKey || '');
+                container.setAttribute('data-to-state', transitionData.toStateKey || '');
+                
                 container.querySelector('.transition-name').value = transitionData.name || '';
                 container.querySelector('.transition-description').value = transitionData.description || '';
                 container.querySelector('.transition-permission').value = transitionData.requiredPermission || '';
@@ -471,7 +482,11 @@
             
             $('#transitions-container').append(container);
             this.transitionIndex++;
-            this.updateStateSelectors();
+            
+            // Only update state selectors if we're not in the middle of loading data
+            if (!this.isLoading) {
+                this.updateStateSelectors();
+            }
         },
         
         removeState: function(button) {
@@ -505,11 +520,34 @@
             
             $('.transition-from, .transition-to').each(function() {
                 var currentValue = $(this).val();
-                $(this).empty().append('<option value="">@Localizer.General["Select state"]</option>');
+                var $select = $(this);
+                var $container = $select.closest('.transition-item');
+                
+                // Check if there's stored data from initial load
+                var storedValue = '';
+                if ($select.hasClass('transition-from')) {
+                    storedValue = $container.attr('data-from-state') || '';
+                } else if ($select.hasClass('transition-to')) {
+                    storedValue = $container.attr('data-to-state') || '';
+                }
+                
+                // Use stored value if current value is empty (during initial load)
+                var valueToSet = currentValue || storedValue;
+                
+                $select.empty().append('<option value="">@Localizer.General["Select state"]</option>');
                 states.forEach(function(state) {
-                    $(this).append('<option value="' + state.key + '">' + state.name + '</option>');
-                }, this);
-                $(this).val(currentValue);
+                    $select.append('<option value="' + state.key + '">' + state.name + '</option>');
+                });
+                $select.val(valueToSet);
+                
+                // Clear stored data after using it
+                if (storedValue) {
+                    if ($select.hasClass('transition-from')) {
+                        $container.removeAttr('data-from-state');
+                    } else if ($select.hasClass('transition-to')) {
+                        $container.removeAttr('data-to-state');
+                    }
+                }
             });
         },
         
@@ -561,7 +599,6 @@
         
         serializeForm: function() {
             var data = {
-                id: this.data ? this.data.id : '',
                 name: $('#workflow-name').val(),
                 description: $('#workflow-description').val(),
                 isDefault: $('#is-default').is(':checked'),
@@ -572,6 +609,11 @@
                 transitions: []
             };
             
+            // Only include main workflow ID if it exists and is valid
+            if (this.data && this.data.id && this.data.id.trim() !== '' && this.data.id !== '00000000-0000-0000-0000-000000000000') {
+                data.id = this.data.id;
+            }
+            
             // Get content types
             $('input[name="ContentTypes"]:checked').each(function() {
                 data.contentTypes.push($(this).val());
@@ -579,8 +621,8 @@
             
             // Get states
             $('.state-item').each(function(index) {
+                var stateId = $(this).find('.state-id').val();
                 var state = {
-                    id: $(this).find('.state-id').val(),
                     key: $(this).find('.state-key').val(),
                     name: $(this).find('.state-name').val(),
                     description: $(this).find('.state-description').val(),
@@ -591,13 +633,19 @@
                     isFinal: $(this).find('.state-final').is(':checked'),
                     sortOrder: index + 1
                 };
+                
+                // Only include ID if it's a valid non-empty GUID
+                if (stateId && stateId.trim() !== '' && stateId !== '00000000-0000-0000-0000-000000000000') {
+                    state.id = stateId;
+                }
+                
                 data.states.push(state);
             });
             
             // Get transitions
             $('.transition-item').each(function(index) {
+                var transitionId = $(this).find('.transition-id').val();
                 var transition = {
-                    id: $(this).find('.transition-id').val(),
                     fromStateKey: $(this).find('.transition-from').val(),
                     toStateKey: $(this).find('.transition-to').val(),
                     name: $(this).find('.transition-name').val(),
@@ -609,6 +657,12 @@
                     sendNotification: $(this).find('.transition-send-notification').is(':checked'),
                     sortOrder: index + 1
                 };
+                
+                // Only include ID if it's a valid non-empty GUID
+                if (transitionId && transitionId.trim() !== '' && transitionId !== '00000000-0000-0000-0000-000000000000') {
+                    transition.id = transitionId;
+                }
+                
                 data.transitions.push(transition);
             });
             

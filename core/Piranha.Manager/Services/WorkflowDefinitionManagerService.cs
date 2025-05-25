@@ -9,7 +9,6 @@
  */
 
 using Piranha.Manager.Models;
-using Piranha.Manager.Models.Workflow;
 using Piranha.Services;
 
 namespace Piranha.Manager.Services;
@@ -40,14 +39,14 @@ public class WorkflowDefinitionManagerService
     /// Gets all workflow definitions for the list view.
     /// </summary>
     /// <returns>The workflow definition list model</returns>
-    public async Task<Models.Workflow.WorkflowDefinitionListModel> GetListAsync()
+    public async Task<WorkflowDefinitionListModel> GetListAsync()
     {
         var workflows = await _workflowService.GetAllAsync();
-        var model = new Models.Workflow.WorkflowDefinitionListModel();
+        var model = new WorkflowDefinitionListModel();
 
         foreach (var workflow in workflows)
         {
-            model.Items.Add(new Models.Workflow.WorkflowDefinitionListModel.WorkflowDefinitionItem
+            model.Items.Add(new WorkflowDefinitionListModel.WorkflowDefinitionItem
             {
                 Id = workflow.Id,
                 Name = workflow.Name,
@@ -70,9 +69,9 @@ public class WorkflowDefinitionManagerService
     /// </summary>
     /// <param name="id">The workflow id</param>
     /// <returns>The edit model</returns>
-    public async Task<Models.Workflow.WorkflowDefinitionEditModel> GetEditModelAsync(Guid? id = null)
+    public async Task<WorkflowDefinitionEditModel> GetEditModelAsync(Guid? id = null)
     {
-        var model = new Models.Workflow.WorkflowDefinitionEditModel();
+        var model = new WorkflowDefinitionEditModel();
 
         if (id.HasValue && id != Guid.Empty)
         {
@@ -92,7 +91,7 @@ public class WorkflowDefinitionManagerService
                 // Map states
                 foreach (var state in workflow.States ?? new List<Piranha.Models.WorkflowState>())
                 {
-                    model.States.Add(new Models.Workflow.WorkflowStateEditModel
+                    model.States.Add(new WorkflowStateEditModel
                     {
                         Id = state.Id,
                         WorkflowDefinitionId = state.WorkflowDefinitionId,
@@ -111,7 +110,7 @@ public class WorkflowDefinitionManagerService
                 // Map transitions
                 foreach (var transition in workflow.Transitions ?? new List<Piranha.Models.WorkflowTransition>())
                 {
-                    model.Transitions.Add(new Models.Workflow.WorkflowTransitionEditModel
+                    model.Transitions.Add(new WorkflowTransitionEditModel
                     {
                         Id = transition.Id,
                         WorkflowDefinitionId = transition.WorkflowDefinitionId,
@@ -140,7 +139,7 @@ public class WorkflowDefinitionManagerService
             model.LastModified = DateTime.Now;
 
             // Add default draft state
-            model.States.Add(new Models.Workflow.WorkflowStateEditModel
+            model.States.Add(new WorkflowStateEditModel
             {
                 Id = Guid.NewGuid(),
                 WorkflowDefinitionId = model.Id,
@@ -167,7 +166,7 @@ public class WorkflowDefinitionManagerService
     /// </summary>
     /// <param name="model">The edit model</param>
     /// <returns>Status message</returns>
-    public async Task<StatusMessage> SaveAsync(Models.Workflow.WorkflowDefinitionEditModel model)
+    public async Task<StatusMessage> SaveAsync(WorkflowDefinitionEditModel model)
     {
         try
         {
@@ -299,31 +298,31 @@ public class WorkflowDefinitionManagerService
     /// Sets the available options for the edit model.
     /// </summary>
     /// <param name="model">The edit model</param>
-    private async Task SetAvailableOptionsAsync(Models.Workflow.WorkflowDefinitionEditModel model)
+    private async Task SetAvailableOptionsAsync(WorkflowDefinitionEditModel model)
     {
         // Set available content types
-        model.AvailableContentTypes = new List<Models.Workflow.WorkflowDefinitionEditModel.ContentTypeOption>
+        model.AvailableContentTypes = new List<WorkflowDefinitionEditModel.ContentTypeOption>
         {
-            new Models.Workflow.WorkflowDefinitionEditModel.ContentTypeOption { Value = "page", Text = "Pages", Selected = model.ContentTypes.Contains("page") },
-            new Models.Workflow.WorkflowDefinitionEditModel.ContentTypeOption { Value = "post", Text = "Posts", Selected = model.ContentTypes.Contains("post") },
-            new Models.Workflow.WorkflowDefinitionEditModel.ContentTypeOption { Value = "content", Text = "Content", Selected = model.ContentTypes.Contains("content") }
+            new WorkflowDefinitionEditModel.ContentTypeOption { Value = "page", Text = "Pages", Selected = model.ContentTypes.Contains("page") },
+            new WorkflowDefinitionEditModel.ContentTypeOption { Value = "post", Text = "Posts", Selected = model.ContentTypes.Contains("post") },
+            new WorkflowDefinitionEditModel.ContentTypeOption { Value = "content", Text = "Content", Selected = model.ContentTypes.Contains("content") }
         };
 
         // Set available permissions
-        model.AvailablePermissions = new List<Models.Workflow.WorkflowDefinitionEditModel.PermissionOption>
+        model.AvailablePermissions = new List<WorkflowDefinitionEditModel.PermissionOption>
         {
-            new Models.Workflow.WorkflowDefinitionEditModel.PermissionOption { Value = "", Text = "No permission required" },
-            new Models.Workflow.WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaContentSubmitForReview", Text = "Submit for Review" },
-            new Models.Workflow.WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaContentReview", Text = "Review Content" },
-            new Models.Workflow.WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaContentApprove", Text = "Approve Content" },
-            new Models.Workflow.WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaContentReject", Text = "Reject Content" },
-            new Models.Workflow.WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaContentPublish", Text = "Publish Content" },
-            new Models.Workflow.WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPagesSubmitForReview", Text = "Submit Pages for Review" },
-            new Models.Workflow.WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPagesApprove", Text = "Approve Pages" },
-            new Models.Workflow.WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPagesReject", Text = "Reject Pages" },
-            new Models.Workflow.WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPostsSubmitForReview", Text = "Submit Posts for Review" },
-            new Models.Workflow.WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPostsApprove", Text = "Approve Posts" },
-            new Models.Workflow.WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPostsReject", Text = "Reject Posts" }
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "", Text = "No permission required" },
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaContentSubmitForReview", Text = "Submit for Review" },
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaContentReview", Text = "Review Content" },
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaContentApprove", Text = "Approve Content" },
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaContentReject", Text = "Reject Content" },
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaContentPublish", Text = "Publish Content" },
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPagesSubmitForReview", Text = "Submit Pages for Review" },
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPagesApprove", Text = "Approve Pages" },
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPagesReject", Text = "Reject Pages" },
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPostsSubmitForReview", Text = "Submit Posts for Review" },
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPostsApprove", Text = "Approve Posts" },
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPostsReject", Text = "Reject Posts" }
         };
 
         await Task.CompletedTask;
@@ -334,7 +333,7 @@ public class WorkflowDefinitionManagerService
     /// </summary>
     /// <param name="model">The edit model</param>
     /// <returns>Validation errors</returns>
-    private List<string> ValidateModel(Models.Workflow.WorkflowDefinitionEditModel model)
+    private List<string> ValidateModel(WorkflowDefinitionEditModel model)
     {
         var errors = new List<string>();
 

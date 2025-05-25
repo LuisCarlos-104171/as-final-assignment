@@ -10,7 +10,7 @@
 
 using System.ComponentModel.DataAnnotations;
 
-namespace Piranha.Manager.Models.Workflow;
+namespace Piranha.Manager.Models;
 
 /// <summary>
 /// Model for editing workflow definitions in the manager.
