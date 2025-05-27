@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using MvcWeb.Models;
+using MvcWeb.Services;
 using Piranha;
 using Piranha.AspNetCore.Identity.Data;
 using Piranha.Models;
@@ -84,10 +85,17 @@ namespace MvcWeb.Controllers
                     var submission = await _repository.AddSubmissionAsync(model, blogId);
                     
                     stopwatch.Stop();
+                    
+                    // Record metrics using centralized service
                     ArticleSubmissionDuration.Record(stopwatch.ElapsedMilliseconds);
                     ArticleSubmissionsCounter.Add(1, 
                         new KeyValuePair<string, object?>("status", "success"), 
                         new KeyValuePair<string, object?>("blogId", blogId.ToString()));
+                    
+                    // Also record using centralized metrics (for consistency)
+                    MetricsService.RecordHttpRequest("POST", "/article/submit", 302, stopwatch.ElapsedMilliseconds);
+                    MetricsService.RecordUserAction("article_submission_success", "content");
+                    MetricsService.RecordWorkflowTransition("new", "draft", "article_workflow");
                     
                     activity?.SetTag("submissionId", submission.Id.ToString());
                     activity?.SetTag("outcome", "success");

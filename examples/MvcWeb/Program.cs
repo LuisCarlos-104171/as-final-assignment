@@ -74,6 +74,18 @@ builder.AddPiranha(options =>
     // Register our custom repository
     builder.Services.AddScoped<ArticleSubmissionRepository>();
     
+    // Register metrics service as singleton
+    builder.Services.AddSingleton<MvcWeb.Services.MetricsService>();
+    
+    // Add session support for visitor tracking
+    builder.Services.AddDistributedMemoryCache();
+    builder.Services.AddSession(options =>
+    {
+        options.IdleTimeout = TimeSpan.FromMinutes(30);
+        options.Cookie.HttpOnly = true;
+        options.Cookie.IsEssential = true;
+    });
+    
     // Configure the different permissions for securing content in the application
     options.UseSecurity(o =>
     {
@@ -100,6 +112,12 @@ if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
+
+// Add session support for visitor tracking
+app.UseSession();
+
+// Add comprehensive telemetry middleware
+app.UseMiddleware<MvcWeb.Middleware.TelemetryMiddleware>();
 
 app.UsePiranha(options =>
 {
