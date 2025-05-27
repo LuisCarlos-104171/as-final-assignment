@@ -5,6 +5,8 @@ using Piranha.AspNetCore.Identity.Data;
 using Piranha.Extend.Blocks;
 using Piranha.Extend.Fields;
 using Piranha.Models;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 
 namespace MvcWeb.Models
 {
@@ -17,6 +19,12 @@ namespace MvcWeb.Models
         private readonly ILogger<ArticleSubmissionRepository> _logger;
         private readonly UserManager<User> _userManager;
         private readonly ArticleDbContext _dbContext;
+        
+        private static readonly ActivitySource ActivitySource = new("MvcWeb.ArticleSubmissionRepository");
+        private static readonly Meter Meter = new("MvcWeb.ArticleSubmissionRepository");
+        private static readonly Counter<int> RepositoryOperationsCounter = Meter.CreateCounter<int>("repository_operations_total", "Total number of repository operations");
+        private static readonly Histogram<double> DatabaseQueryDuration = Meter.CreateHistogram<double>("database_query_duration_ms", "Duration of database queries in milliseconds");
+        private static readonly Counter<int> PostCreationsCounter = Meter.CreateCounter<int>("post_creations_total", "Total number of post creations from submissions");
 
         /// <summary>
         /// Constructor
@@ -37,49 +45,83 @@ namespace MvcWeb.Models
         /// </summary>
         public async Task<SubmittedArticle> AddSubmissionAsync(ArticleSubmissionModel model, Guid blogId)
         {
-            // Create entity from model
-            var entity = new ArticleEntity
+            using var activity = ActivitySource.StartActivity("ArticleSubmissionRepository.AddSubmission");
+            var stopwatch = Stopwatch.StartNew();
+            
+            activity?.SetTag("blogId", blogId.ToString());
+            activity?.SetTag("hasImage", model.PrimaryImage != null);
+            activity?.SetTag("author", model.Author);
+            
+            try
             {
-                Id = Guid.NewGuid(),
-                Created = DateTime.Now,
-                LastModified = DateTime.Now,
-                Status = ArticleStatus.Draft,
-                Title = model.Title,
-                Category = model.Category,
-                Tags = model.Tags,
-                Excerpt = model.Excerpt,
-                Content = model.Content,
-                Email = model.Email,
-                Author = model.Author,
-                NotifyOnComment = model.NotifyOnComment,
-                BlogId = blogId
-            };
-
-            // If a primary image was provided, save it to media
-            if (model.PrimaryImage != null)
-            {
-                using var stream = model.PrimaryImage.OpenReadStream();
-                // Save media and get the media content
-                var mediaContent = new Piranha.Models.StreamMediaContent
+                // Create entity from model
+                var entity = new ArticleEntity
                 {
-                    Filename = model.PrimaryImage.FileName,
-                    Data = stream
+                    Id = Guid.NewGuid(),
+                    Created = DateTime.Now,
+                    LastModified = DateTime.Now,
+                    Status = ArticleStatus.Draft,
+                    Title = model.Title,
+                    Category = model.Category,
+                    Tags = model.Tags,
+                    Excerpt = model.Excerpt,
+                    Content = model.Content,
+                    Email = model.Email,
+                    Author = model.Author,
+                    NotifyOnComment = model.NotifyOnComment,
+                    BlogId = blogId
                 };
-                await _api.Media.SaveAsync(mediaContent);
-                
-                // Store the media ID if it was created successfully
-                if (mediaContent.Id.HasValue)
+
+                // If a primary image was provided, save it to media
+                if (model.PrimaryImage != null)
                 {
-                    entity.PrimaryImageId = mediaContent.Id.Value;
+                    using var stream = model.PrimaryImage.OpenReadStream();
+                    // Save media and get the media content
+                    var mediaContent = new Piranha.Models.StreamMediaContent
+                    {
+                        Filename = model.PrimaryImage.FileName,
+                        Data = stream
+                    };
+                    await _api.Media.SaveAsync(mediaContent);
+                    
+                    // Store the media ID if it was created successfully
+                    if (mediaContent.Id.HasValue)
+                    {
+                        entity.PrimaryImageId = mediaContent.Id.Value;
+                        activity?.SetTag("mediaId", mediaContent.Id.Value.ToString());
+                    }
                 }
+
+                // Save to database
+                _dbContext.Articles.Add(entity);
+                await _dbContext.SaveChangesAsync();
+
+                stopwatch.Stop();
+                DatabaseQueryDuration.Record(stopwatch.ElapsedMilliseconds);
+                RepositoryOperationsCounter.Add(1, 
+                    new KeyValuePair<string, object?>("operation", "add_submission"), 
+                    new KeyValuePair<string, object?>("status", "success"));
+                
+                activity?.SetTag("submissionId", entity.Id.ToString());
+                activity?.SetTag("outcome", "success");
+
+                // Convert to SubmittedArticle for API consistency
+                return ConvertToSubmittedArticle(entity);
             }
-
-            // Save to database
-            _dbContext.Articles.Add(entity);
-            await _dbContext.SaveChangesAsync();
-
-            // Convert to SubmittedArticle for API consistency
-            return ConvertToSubmittedArticle(entity);
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                RepositoryOperationsCounter.Add(1, 
+                    new KeyValuePair<string, object?>("operation", "add_submission"), 
+                    new KeyValuePair<string, object?>("status", "error"));
+                
+                activity?.SetTag("outcome", "error");
+                activity?.SetTag("error.message", ex.Message);
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                
+                _logger.LogError(ex, "Failed to add submission for author {Author}", model.Author);
+                throw;
+            }
         }
         
         /// <summary>
@@ -208,6 +250,13 @@ namespace MvcWeb.Models
         /// </summary>
         private async Task CreatePostFromSubmissionAsync(SubmittedArticle article)
         {
+            using var activity = ActivitySource.StartActivity("ArticleSubmissionRepository.CreatePost");
+            var stopwatch = Stopwatch.StartNew();
+            
+            activity?.SetTag("articleId", article.Id.ToString());
+            activity?.SetTag("blogId", article.BlogId.ToString());
+            activity?.SetTag("title", article.Submission.Title);
+            
             try
             {
                 // Start by creating a new post
@@ -232,9 +281,11 @@ namespace MvcWeb.Models
                     post.Category = article.Submission.Category;
                 }
                 
+                activity?.SetTag("category", post.Category);
                 post.Published = DateTime.Now; // Ensure the post is published immediately
 
                 // Process tags
+                var tagCount = 0;
                 if (!string.IsNullOrWhiteSpace(article.Submission.Tags))
                 {
                     var tags = article.Submission.Tags
@@ -245,8 +296,10 @@ namespace MvcWeb.Models
                     foreach (var tag in tags)
                     {
                         post.Tags.Add(tag);
+                        tagCount++;
                     }
                 }
+                activity?.SetTag("tagCount", tagCount);
 
                 // Create the content block
                 var htmlBlock = new HtmlBlock
@@ -271,11 +324,28 @@ namespace MvcWeb.Models
                     // Update the article with the post id
                     article.PostId = post.Id;
                     
+                    stopwatch.Stop();
+                    PostCreationsCounter.Add(1, 
+                        new KeyValuePair<string, object?>("status", "success"), 
+                        new KeyValuePair<string, object?>("category", post.Category));
+                    
+                    activity?.SetTag("postId", post.Id.ToString());
+                    activity?.SetTag("outcome", "success");
+                    
                     _logger.LogInformation("Successfully published article {ArticleId} as post {PostId}", 
                         article.Id, post.Id);
                 }
                 catch (Exception ex)
                 {
+                    stopwatch.Stop();
+                    PostCreationsCounter.Add(1, 
+                        new KeyValuePair<string, object?>("status", "save_error"), 
+                        new KeyValuePair<string, object?>("category", post.Category));
+                    
+                    activity?.SetTag("outcome", "save_error");
+                    activity?.SetTag("error.message", ex.Message);
+                    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    
                     _logger.LogError(ex, "Failed to save post for article {ArticleId}. Title: {Title}, Category: {Category}", 
                         article.Id, post.Title, post.Category);
                     throw;
@@ -283,6 +353,13 @@ namespace MvcWeb.Models
             }
             catch (Exception ex)
             {
+                stopwatch.Stop();
+                PostCreationsCounter.Add(1, new KeyValuePair<string, object?>("status", "error"));
+                
+                activity?.SetTag("outcome", "error");
+                activity?.SetTag("error.message", ex.Message);
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                
                 _logger.LogError(ex, "Error creating post from article submission {ArticleId}", article.Id);
                 throw;
             }

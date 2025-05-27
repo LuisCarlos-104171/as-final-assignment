@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # Network bridge for accessing host services from containers
+  host-bridge:
+    image: alpine/socat:latest
+    network_mode: host
+    command: TCP-LISTEN:5000,fork,bind=host.docker.internal TCP-CONNECT:127.0.0.1:5000
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+  # Jaeger
+  jaeger:
+    image: jaegertracing/all-in-one:1.50
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # Jaeger HTTP
+      - "6831:6831/udp"  # Jaeger agent UDP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - telemetry
+    volumes:
+      - jaeger-data:/tmp
+    restart: unless-stopped
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - telemetry
+    restart: unless-stopped
+    depends_on:
+      - host-bridge
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+  # Grafana
+  grafana:
+    image: grafana/grafana-oss:10.1.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - telemetry
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+networks:
+  telemetry:
+    driver: bridge
+
+volumes:
+  jaeger-data:
+  prometheus-data:
+  grafana-data:

@@ -6,6 +6,8 @@ using Piranha;
 using Piranha.AspNetCore.Identity.Data;
 using Piranha.Models;
 using System.Security.Claims;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 
 namespace MvcWeb.Controllers
 {
@@ -16,6 +18,12 @@ namespace MvcWeb.Controllers
         private readonly ILogger<ArticleController> _logger;
         private readonly ArticleSubmissionRepository _repository;
         private readonly UserManager<User> _userManager;
+        
+        private static readonly ActivitySource ActivitySource = new("MvcWeb.ArticleController");
+        private static readonly Meter Meter = new("MvcWeb.ArticleController");
+        private static readonly Counter<int> ArticleSubmissionsCounter = Meter.CreateCounter<int>("article_submissions_total", "Total number of article submissions");
+        private static readonly Counter<int> ArticleReviewsCounter = Meter.CreateCounter<int>("article_reviews_total", "Total number of article reviews");
+        private static readonly Histogram<double> ArticleSubmissionDuration = Meter.CreateHistogram<double>("article_submission_duration_ms", "Duration of article submissions in milliseconds");
 
         /// <summary>
         /// Default constructor.
@@ -62,6 +70,12 @@ namespace MvcWeb.Controllers
         [Authorize]
         public async Task<IActionResult> Submit(ArticleSubmissionModel model, Guid blogId)
         {
+            using var activity = ActivitySource.StartActivity("ArticleController.Submit");
+            var stopwatch = Stopwatch.StartNew();
+            
+            activity?.SetTag("blogId", blogId.ToString());
+            activity?.SetTag("userId", User.Identity?.Name ?? "unknown");
+            
             if (ModelState.IsValid)
             {
                 try
@@ -69,14 +83,42 @@ namespace MvcWeb.Controllers
                     // Add the submission
                     var submission = await _repository.AddSubmissionAsync(model, blogId);
                     
+                    stopwatch.Stop();
+                    ArticleSubmissionDuration.Record(stopwatch.ElapsedMilliseconds);
+                    ArticleSubmissionsCounter.Add(1, 
+                        new KeyValuePair<string, object?>("status", "success"), 
+                        new KeyValuePair<string, object?>("blogId", blogId.ToString()));
+                    
+                    activity?.SetTag("submissionId", submission.Id.ToString());
+                    activity?.SetTag("outcome", "success");
+                    
+                    _logger.LogInformation("Article submitted successfully with ID {SubmissionId} by user {UserId}", 
+                        submission.Id, User.Identity?.Name);
+                    
                     // Redirect to a thank you page
                     return RedirectToAction("ThankYou", new { id = submission.Id });
                 }
                 catch (Exception ex)
                 {
+                    stopwatch.Stop();
+                    ArticleSubmissionsCounter.Add(1, 
+                        new KeyValuePair<string, object?>("status", "error"), 
+                        new KeyValuePair<string, object?>("blogId", blogId.ToString()));
+                    
+                    activity?.SetTag("outcome", "error");
+                    activity?.SetTag("error.message", ex.Message);
+                    activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                    
                     _logger.LogError(ex, "Error submitting article");
                     ModelState.AddModelError("", "An error occurred while submitting your article. Please try again.");
                 }
+            }
+            else
+            {
+                ArticleSubmissionsCounter.Add(1, 
+                    new KeyValuePair<string, object?>("status", "validation_error"), 
+                    new KeyValuePair<string, object?>("blogId", blogId.ToString()));
+                activity?.SetTag("outcome", "validation_error");
             }
             
             // If we got here, something went wrong
@@ -225,12 +267,21 @@ namespace MvcWeb.Controllers
         [HttpPost]
         public async Task<IActionResult> Review(Guid id, ArticleStatus status, string feedback)
         {
+            using var activity = ActivitySource.StartActivity("ArticleController.Review");
+            
+            activity?.SetTag("articleId", id.ToString());
+            activity?.SetTag("newStatus", status.ToString());
+            activity?.SetTag("userId", User.Identity?.Name ?? "unknown");
+            
             var article = await _repository.GetSubmissionByIdAsync(id);
             
             if (article == null)
             {
+                activity?.SetTag("outcome", "not_found");
                 return NotFound();
             }
+            
+            activity?.SetTag("previousStatus", article.Status.ToString());
             
             // Check permissions based on status
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -249,6 +300,7 @@ namespace MvcWeb.Controllers
             }
             
             var roles = await _userManager.GetRolesAsync(user);
+            activity?.SetTag("userRoles", string.Join(",", roles));
             
             if (!roles.Contains("SysAdmin"))
             {
@@ -256,6 +308,7 @@ namespace MvcWeb.Controllers
                 {
                     if (!roles.Contains("Editor"))
                     {
+                        activity?.SetTag("outcome", "forbidden");
                         return Forbid();
                     }
                 }
@@ -264,6 +317,7 @@ namespace MvcWeb.Controllers
                 {
                     if (!roles.Contains("Approver"))
                     {
+                        activity?.SetTag("outcome", "forbidden");
                         return Forbid();
                     }
                 }
@@ -272,10 +326,30 @@ namespace MvcWeb.Controllers
             try
             {
                 await _repository.UpdateSubmissionStatusAsync(id, status, userId, feedback);
+                
+                ArticleReviewsCounter.Add(1, 
+                    new KeyValuePair<string, object?>("status", "success"), 
+                    new KeyValuePair<string, object?>("previousStatus", article.Status.ToString()),
+                    new KeyValuePair<string, object?>("newStatus", status.ToString()));
+                
+                activity?.SetTag("outcome", "success");
+                
+                _logger.LogInformation("Article {ArticleId} status updated from {PreviousStatus} to {NewStatus} by user {UserId}", 
+                    id, article.Status, status, User.Identity?.Name);
+                
                 return RedirectToAction("Workflow");
             }
             catch (Exception ex)
             {
+                ArticleReviewsCounter.Add(1, 
+                    new KeyValuePair<string, object?>("status", "error"), 
+                    new KeyValuePair<string, object?>("previousStatus", article.Status.ToString()),
+                    new KeyValuePair<string, object?>("newStatus", status.ToString()));
+                
+                activity?.SetTag("outcome", "error");
+                activity?.SetTag("error.message", ex.Message);
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                
                 _logger.LogError(ex, "Error updating article status");
                 ModelState.AddModelError("", "An error occurred while updating the article status.");
                 ViewBag.UserRoles = roles;
