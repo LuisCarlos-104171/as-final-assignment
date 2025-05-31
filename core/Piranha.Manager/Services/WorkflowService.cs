@@ -70,19 +70,17 @@ public class WorkflowService
             model.CurrentState = ContentState.Draft;
         }
         
-        // Get user permissions from the current principal
-        var permissions = App.Permissions.GetPublicPermissions()
-            .Select(p => p.Name)
-            .ToList();
+        // TODO: Get user roles from the current principal
+        var userRoles = new List<Guid>(); // For now, empty list - should be populated with actual user roles
 
-        // Get all available transitions based on the current state and user permissions
-        var workflowTransitions = await _workflowDefinitionService.GetAvailableTransitionsAsync(contentType, model.CurrentState, permissions);
+        // Get all available transitions based on the current state and user roles
+        var workflowTransitions = await _workflowDefinitionService.GetAvailableTransitionsAsync(contentType, model.CurrentState, userRoles);
         model.AvailableTransitions = workflowTransitions.Select(t => new WorkflowModel.WorkflowTransition
         {
             FromState = t.FromStateKey,
             ToState = t.ToStateKey,
             Name = t.Name,
-            Permission = t.RequiredPermission,
+            RoleId = t.RequiredRoleId,
             CssClass = t.CssClass
         }).ToList();
 
@@ -99,13 +97,11 @@ public class WorkflowService
     {
         try
         {
-            // Get user permissions from the current principal
-            var permissions = App.Permissions.GetPublicPermissions()
-                .Select(p => p.Name)
-                .ToList();
+            // TODO: Get user roles from the current principal
+            var userRoles = new List<Guid>(); // For now, empty list - should be populated with actual user roles
 
             // Validate the transition is allowed for this user
-            var isValidTransition = await _workflowDefinitionService.ValidateTransitionAsync(model.ContentType, model.CurrentState, model.TargetState, permissions);
+            var isValidTransition = await _workflowDefinitionService.ValidateTransitionAsync(model.ContentType, model.CurrentState, model.TargetState, userRoles);
 
             if (!isValidTransition)
             {

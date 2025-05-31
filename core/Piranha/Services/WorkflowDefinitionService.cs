@@ -19,14 +19,17 @@ namespace Piranha.Services;
 internal class WorkflowDefinitionService : IWorkflowDefinitionService
 {
     private readonly IWorkflowRepository _repo;
+    private readonly IServiceProvider _serviceProvider;
 
     /// <summary>
     /// Default constructor.
     /// </summary>
     /// <param name="repo">The workflow repository</param>
-    public WorkflowDefinitionService(IWorkflowRepository repo)
+    /// <param name="serviceProvider">The service provider</param>
+    public WorkflowDefinitionService(IWorkflowRepository repo, IServiceProvider serviceProvider)
     {
         _repo = repo;
+        _serviceProvider = serviceProvider;
     }
 
     /// <summary>
@@ -115,6 +118,10 @@ internal class WorkflowDefinitionService : IWorkflowDefinitionService
     /// <returns>The default workflow definition</returns>
     public async Task<WorkflowDefinition> CreateDefaultWorkflowAsync(string name, string[] contentTypes)
     {
+        // Get actual role IDs from the database
+        var adminRoleId = await GetRoleIdByNameAsync("Approver");
+        var editorRoleId = await GetRoleIdByNameAsync("Editor");
+        
         var workflow = new WorkflowDefinition
         {
             Id = Guid.NewGuid(),
@@ -215,7 +222,6 @@ internal class WorkflowDefinitionService : IWorkflowDefinitionService
                 ToStateKey = "in_review",
                 Name = "Submit for Review",
                 Description = "Submit content for editorial review",
-                RequiredPermission = "PiranhaContentSubmitForReview",
                 CssClass = "btn-primary",
                 Icon = "fas fa-paper-plane",
                 SortOrder = 1,
@@ -231,7 +237,7 @@ internal class WorkflowDefinitionService : IWorkflowDefinitionService
                 ToStateKey = "approved",
                 Name = "Approve",
                 Description = "Approve the content",
-                RequiredPermission = "PiranhaContentApprove",
+                RequiredRoleId = editorRoleId, // Editors can approve content
                 CssClass = "btn-success",
                 Icon = "fas fa-check",
                 SortOrder = 1,
@@ -247,7 +253,7 @@ internal class WorkflowDefinitionService : IWorkflowDefinitionService
                 ToStateKey = "rejected",
                 Name = "Reject",
                 Description = "Reject the content",
-                RequiredPermission = "PiranhaContentReject",
+                RequiredRoleId = editorRoleId, // Editors can reject content
                 CssClass = "btn-danger",
                 Icon = "fas fa-times",
                 SortOrder = 2,
@@ -263,7 +269,7 @@ internal class WorkflowDefinitionService : IWorkflowDefinitionService
                 ToStateKey = "published",
                 Name = "Publish",
                 Description = "Publish the content",
-                RequiredPermission = "PiranhaContentPublish",
+                RequiredRoleId = adminRoleId, // Administrators can publish content
                 CssClass = "btn-success",
                 Icon = "fas fa-globe",
                 SortOrder = 1,
@@ -279,7 +285,7 @@ internal class WorkflowDefinitionService : IWorkflowDefinitionService
                 ToStateKey = "draft",
                 Name = "Back to Draft",
                 Description = "Return content to draft state",
-                RequiredPermission = null,
+                RequiredRoleId = null, // No role required - anyone can move rejected content back to draft
                 CssClass = "btn-secondary",
                 Icon = "fas fa-undo",
                 SortOrder = 1,
@@ -295,7 +301,7 @@ internal class WorkflowDefinitionService : IWorkflowDefinitionService
                 ToStateKey = "draft",
                 Name = "Unpublish",
                 Description = "Unpublish the content",
-                RequiredPermission = "PiranhaContentPublish",
+                RequiredRoleId = adminRoleId, // Administrators can unpublish content
                 CssClass = "btn-warning",
                 Icon = "fas fa-eye-slash",
                 SortOrder = 1,
@@ -370,9 +376,9 @@ internal class WorkflowDefinitionService : IWorkflowDefinitionService
     /// </summary>
     /// <param name="contentType">The content type</param>
     /// <param name="currentState">The current state</param>
-    /// <param name="permissions">The user permissions</param>
+    /// <param name="userRoles">The user roles</param>
     /// <returns>The available transitions</returns>
-    public async Task<IEnumerable<WorkflowTransition>> GetAvailableTransitionsAsync(string contentType, string currentState, IEnumerable<string> permissions)
+    public async Task<IEnumerable<WorkflowTransition>> GetAvailableTransitionsAsync(string contentType, string currentState, IEnumerable<Guid> userRoles = null)
     {
         var workflow = await GetDefaultByContentTypeAsync(contentType);
         if (workflow == null)
@@ -380,10 +386,11 @@ internal class WorkflowDefinitionService : IWorkflowDefinitionService
             return Enumerable.Empty<WorkflowTransition>();
         }
 
-        var userPermissions = permissions.ToHashSet();
+        var userRoleIds = userRoles?.ToHashSet() ?? new HashSet<Guid>();
+        
         var availableTransitions = workflow.Transitions
             .Where(t => t.FromStateKey == currentState)
-            .Where(t => string.IsNullOrEmpty(t.RequiredPermission) || userPermissions.Contains(t.RequiredPermission))
+            .Where(t => !t.RequiredRoleId.HasValue || userRoleIds.Contains(t.RequiredRoleId.Value))
             .OrderBy(t => t.SortOrder)
             .ToList();
 
@@ -396,11 +403,111 @@ internal class WorkflowDefinitionService : IWorkflowDefinitionService
     /// <param name="contentType">The content type</param>
     /// <param name="fromState">The from state</param>
     /// <param name="toState">The to state</param>
-    /// <param name="permissions">The user permissions</param>
+    /// <param name="userRoles">The user roles</param>
     /// <returns>True if the transition is valid</returns>
-    public async Task<bool> ValidateTransitionAsync(string contentType, string fromState, string toState, IEnumerable<string> permissions)
+    public async Task<bool> ValidateTransitionAsync(string contentType, string fromState, string toState, IEnumerable<Guid> userRoles = null)
     {
-        var availableTransitions = await GetAvailableTransitionsAsync(contentType, fromState, permissions);
+        var availableTransitions = await GetAvailableTransitionsAsync(contentType, fromState, userRoles);
         return availableTransitions.Any(t => t.ToStateKey == toState);
+    }
+
+    /// <summary>
+    /// Gets a role ID by name from the Identity database.
+    /// </summary>
+    /// <param name="roleName">The role name</param>
+    /// <returns>The role ID if found, null otherwise</returns>
+    private async Task<Guid?> GetRoleIdByNameAsync(string roleName)
+    {
+        try
+        {
+            // Get the Identity database context using reflection
+            var piranhaIdentityAssembly = AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(a => a.GetName().Name == "Piranha.AspNetCore.Identity");
+            
+            if (piranhaIdentityAssembly == null)
+            {
+                return null;
+            }
+
+            // Get the IDb interface type
+            var idbType = piranhaIdentityAssembly.GetType("Piranha.AspNetCore.Identity.IDb");
+            if (idbType == null)
+            {
+                return null;
+            }
+
+            // Get the Identity DB from DI container
+            var identityDb = _serviceProvider.GetService(idbType);
+            if (identityDb == null)
+            {
+                return null;
+            }
+
+            // Get the Roles property
+            var rolesProperty = idbType.GetProperty("Roles");
+            if (rolesProperty == null)
+            {
+                return null;
+            }
+
+            var rolesDbSet = rolesProperty.GetValue(identityDb);
+            if (rolesDbSet == null)
+            {
+                return null;
+            }
+
+            // Get the role type
+            var roleType = piranhaIdentityAssembly.GetType("Piranha.AspNetCore.Identity.Data.Role");
+            if (roleType == null)
+            {
+                return null;
+            }
+
+            // Use LINQ to find the role by name
+            var whereMethod = typeof(Enumerable).GetMethods()
+                .Where(m => m.Name == "Where" && m.GetParameters().Length == 2)
+                .First().MakeGenericMethod(roleType);
+
+            var nameProperty = roleType.GetProperty("Name");
+            if (nameProperty == null)
+            {
+                return null;
+            }
+
+            // Create a predicate to find role by name
+            var parameterExpression = System.Linq.Expressions.Expression.Parameter(roleType, "r");
+            var propertyExpression = System.Linq.Expressions.Expression.Property(parameterExpression, nameProperty);
+            var constantExpression = System.Linq.Expressions.Expression.Constant(roleName);
+            var equalExpression = System.Linq.Expressions.Expression.Equal(propertyExpression, constantExpression);
+            var lambdaExpression = System.Linq.Expressions.Expression.Lambda(equalExpression, parameterExpression);
+
+            var filteredRoles = whereMethod.Invoke(null, new[] { rolesDbSet, lambdaExpression.Compile() });
+
+            // Get first or default
+            var firstOrDefaultMethod = typeof(Enumerable).GetMethods()
+                .Where(m => m.Name == "FirstOrDefault" && m.GetParameters().Length == 1)
+                .First().MakeGenericMethod(roleType);
+
+            var role = firstOrDefaultMethod.Invoke(null, new[] { filteredRoles });
+
+            if (role != null)
+            {
+                var idProperty = roleType.GetProperty("Id");
+                if (idProperty != null)
+                {
+                    var id = idProperty.GetValue(role);
+                    if (id is Guid guidId)
+                    {
+                        return guidId;
+                    }
+                }
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Piranha.Manager.Models;
 using Piranha.Manager.Services;
+using System.Reflection;
 
 namespace Piranha.Manager.Controllers;
 
@@ -25,14 +26,17 @@ namespace Piranha.Manager.Controllers;
 public class WorkflowDefinitionApiController : Controller
 {
     private readonly WorkflowDefinitionManagerService _service;
+    private readonly IServiceProvider _serviceProvider;
 
     /// <summary>
     /// Default constructor.
     /// </summary>
     /// <param name="service">The workflow definition manager service</param>
-    public WorkflowDefinitionApiController(WorkflowDefinitionManagerService service)
+    /// <param name="serviceProvider">The service provider</param>
+    public WorkflowDefinitionApiController(WorkflowDefinitionManagerService service, IServiceProvider serviceProvider)
     {
         _service = service;
+        _serviceProvider = serviceProvider;
     }
 
     /// <summary>
@@ -170,6 +174,120 @@ public class WorkflowDefinitionApiController : Controller
     }
 
     /// <summary>
+    /// Gets all available roles.
+    /// </summary>
+    /// <returns>The available roles</returns>
+    [HttpGet("roles")]
+    public async Task<IActionResult> GetRoles()
+    {
+        try
+        {
+            // Try to get roles from Identity if available
+            var roles = await GetRolesFromIdentity();
+            return Ok(roles);
+        }
+        catch (Exception ex)
+        {
+            // For debugging - in production this should just return empty list
+            return Ok(new List<RoleViewModel>
+            {
+                new RoleViewModel { Id = Guid.Empty, Name = $"Debug: {ex.Message}" }
+            });
+        }
+    }
+
+    private Task<List<RoleViewModel>> GetRolesFromIdentity()
+    {
+        try
+        {
+            // Try to get the Identity database context using reflection
+            var piranhaIdentityAssembly = AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(a => a.GetName().Name == "Piranha.AspNetCore.Identity");
+            
+            if (piranhaIdentityAssembly == null)
+            {
+                return Task.FromResult(new List<RoleViewModel>());
+            }
+
+            // Get the IDb interface type
+            var idbType = piranhaIdentityAssembly.GetType("Piranha.AspNetCore.Identity.IDb");
+            if (idbType == null)
+            {
+                return Task.FromResult(new List<RoleViewModel>());
+            }
+
+            // Get the Identity DB from DI container
+            var identityDb = _serviceProvider.GetService(idbType);
+            if (identityDb == null)
+            {
+                return Task.FromResult(new List<RoleViewModel>());
+            }
+
+            // Get the Roles property
+            var rolesProperty = idbType.GetProperty("Roles");
+            if (rolesProperty == null)
+            {
+                return Task.FromResult(new List<RoleViewModel>());
+            }
+
+            var rolesDbSet = rolesProperty.GetValue(identityDb);
+            if (rolesDbSet == null)
+            {
+                return Task.FromResult(new List<RoleViewModel>());
+            }
+
+            // Get the role type
+            var roleType = piranhaIdentityAssembly.GetType("Piranha.AspNetCore.Identity.Data.Role");
+            if (roleType == null)
+            {
+                return Task.FromResult(new List<RoleViewModel>());
+            }
+
+            // Convert DbSet to List using reflection
+            var toListMethod = typeof(Enumerable).GetMethods()
+                .Where(m => m.Name == "ToList" && m.IsGenericMethodDefinition)
+                .First().MakeGenericMethod(roleType);
+
+            var rolesList = toListMethod.Invoke(null, new[] { rolesDbSet });
+            
+            if (rolesList == null)
+            {
+                return Task.FromResult(new List<RoleViewModel>());
+            }
+
+            // Extract Id and Name properties from each role
+            var roles = new List<RoleViewModel>();
+            var idProperty = roleType.GetProperty("Id");
+            var nameProperty = roleType.GetProperty("Name");
+
+            if (idProperty != null && nameProperty != null)
+            {
+                foreach (var role in (System.Collections.IEnumerable)rolesList)
+                {
+                    var id = idProperty.GetValue(role);
+                    var name = nameProperty.GetValue(role);
+                    
+                    if (id is Guid guidId && name is string stringName)
+                    {
+                        roles.Add(new RoleViewModel
+                        {
+                            Id = guidId,
+                            Name = stringName
+                        });
+                    }
+                }
+            }
+
+            return Task.FromResult(roles.OrderBy(r => r.Name).ToList());
+        }
+        catch (Exception ex)
+        {
+            // Return empty list if something goes wrong
+            return Task.FromResult(new List<RoleViewModel>());
+        }
+    }
+
+    /// <summary>
     /// Request model for creating a default workflow.
     /// </summary>
     public class CreateDefaultWorkflowRequest
@@ -183,5 +301,21 @@ public class WorkflowDefinitionApiController : Controller
         /// Gets/sets the content types.
         /// </summary>
         public string[] ContentTypes { get; set; }
+    }
+
+    /// <summary>
+    /// View model for role dropdown.
+    /// </summary>
+    public class RoleViewModel
+    {
+        /// <summary>
+        /// Gets/sets the role id.
+        /// </summary>
+        public Guid Id { get; set; }
+
+        /// <summary>
+        /// Gets/sets the role name.
+        /// </summary>
+        public string Name { get; set; }
     }
 }

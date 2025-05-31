@@ -469,6 +469,16 @@ public abstract class Db<T> : DbContext, IDb where T : Db<T>
         mb.Entity<Data.Taxonomy>().Property(t => t.Title).IsRequired().HasMaxLength(64);
         mb.Entity<Data.Taxonomy>().Property(t => t.Slug).IsRequired().HasMaxLength(64);
         mb.Entity<Data.Taxonomy>().HasIndex(t => new { t.GroupId, t.Type, t.Slug }).IsUnique();
+
+        // Configure WorkflowTransitions to ignore the RequiredPermission column that exists in DB but not in model
+        mb.Entity<Data.WorkflowTransition>().ToTable("WorkflowTransitions");
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.FromStateKey).IsRequired().HasMaxLength(64);
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.ToStateKey).IsRequired().HasMaxLength(64);
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.Name).IsRequired().HasMaxLength(128);
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.Description).HasMaxLength(512);
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.CssClass).HasMaxLength(64);
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.Icon).HasMaxLength(64);
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.NotificationTemplate).HasMaxLength(1024);
     }
 
     /// <summary>

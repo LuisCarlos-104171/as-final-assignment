@@ -258,13 +258,9 @@
             </div>
             <div class="col-md-3">
                 <div class="form-group">
-                    <label>@Localizer.General["Permission"]</label>
-                    <select class="form-control transition-permission" name="Transitions[].RequiredPermission">
-                        <option value="">@Localizer.General["No permission required"]</option>
-                        <option value="PiranhaContentSubmitForReview">Submit for Review</option>
-                        <option value="PiranhaContentApprove">Approve Content</option>
-                        <option value="PiranhaContentReject">Reject Content</option>
-                        <option value="PiranhaContentPublish">Publish Content</option>
+                    <label>@Localizer.General["Role"]</label>
+                    <select class="form-control transition-role" name="Transitions[].RequiredRoleId">
+                        <option value="">@Localizer.General["No role required"]</option>
                     </select>
                 </div>
             </div>
@@ -337,17 +333,36 @@
 <script>
     var workflowEdit = {
         data: null,
+        roles: [],
         stateIndex: 0,
         transitionIndex: 0,
         
         init: function() {
-            var routeAction = '@ViewContext.RouteData.Values["routeAction"]';
-            var id = '@ViewContext.RouteData.Values["id"]';
-            if (routeAction === 'edit' && id) {
-                this.load(id);
-            } else {
-                this.loadNew();
-            }
+            var self = this;
+            this.loadRoles().then(function() {
+                var routeAction = '@ViewContext.RouteData.Values["routeAction"]';
+                var id = '@ViewContext.RouteData.Values["id"]';
+                if (routeAction === 'edit' && id) {
+                    self.load(id);
+                } else {
+                    self.loadNew();
+                }
+            });
+        },
+        
+        loadRoles: function() {
+            var self = this;
+            return $.ajax({
+                url: piranha.baseUrl + 'manager/api/workflow-definitions/roles',
+                type: 'GET',
+                success: function(data) {
+                    self.roles = data || [];
+                },
+                error: function() {
+                    console.warn('Failed to load roles, role dropdown will be empty');
+                    self.roles = [];
+                }
+            });
         },
         
         load: function(id) {
@@ -462,6 +477,15 @@
             // Update input names with index
             this.updateInputNames(container, 'Transitions', this.transitionIndex);
             
+            // Populate role dropdown
+            var roleSelect = container.querySelector('.transition-role');
+            this.roles.forEach(function(role) {
+                var option = document.createElement('option');
+                option.value = role.id;
+                option.textContent = role.name;
+                roleSelect.appendChild(option);
+            });
+            
             if (transitionData) {
                 // Store the data to be applied after state selectors are updated
                 container.setAttribute('data-from-state', transitionData.fromStateKey || '');
@@ -469,7 +493,7 @@
                 
                 container.querySelector('.transition-name').value = transitionData.name || '';
                 container.querySelector('.transition-description').value = transitionData.description || '';
-                container.querySelector('.transition-permission').value = transitionData.requiredPermission || '';
+                container.querySelector('.transition-role').value = transitionData.requiredRoleId || '';
                 container.querySelector('.transition-css').value = transitionData.cssClass || 'btn-primary';
                 container.querySelector('.transition-icon').value = transitionData.icon || 'fas fa-arrow-right';
                 container.querySelector('.transition-requires-comment').checked = transitionData.requiresComment || false;
@@ -645,12 +669,13 @@
             // Get transitions
             $('.transition-item').each(function(index) {
                 var transitionId = $(this).find('.transition-id').val();
+                var roleId = $(this).find('.transition-role').val();
                 var transition = {
                     fromStateKey: $(this).find('.transition-from').val(),
                     toStateKey: $(this).find('.transition-to').val(),
                     name: $(this).find('.transition-name').val(),
                     description: $(this).find('.transition-description').val(),
-                    requiredPermission: $(this).find('.transition-permission').val(),
+                    requiredRoleId: roleId && roleId !== '' ? roleId : null,
                     cssClass: $(this).find('.transition-css').val(),
                     icon: $(this).find('.transition-icon').val(),
                     requiresComment: $(this).find('.transition-requires-comment').is(':checked'),

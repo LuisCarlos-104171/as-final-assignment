@@ -53,9 +53,9 @@ public class WorkflowTransitionEditModel
     public string Description { get; set; }
 
     /// <summary>
-    /// Gets/sets the required permission.
+    /// Gets/sets the required role id.
     /// </summary>
-    public string RequiredPermission { get; set; }
+    public Guid? RequiredRoleId { get; set; }
 
     /// <summary>
     /// Gets/sets the CSS class for the transition button.

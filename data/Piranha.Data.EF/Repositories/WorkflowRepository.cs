@@ -325,7 +325,7 @@ internal class WorkflowRepository : IWorkflowRepository
             ToStateKey = entity.ToStateKey,
             Name = entity.Name,
             Description = entity.Description,
-            RequiredPermission = entity.RequiredPermission,
+            RequiredRoleId = entity.RequiredRoleId,
             CssClass = entity.CssClass,
             Icon = entity.Icon,
             SortOrder = entity.SortOrder,
@@ -382,7 +382,7 @@ internal class WorkflowRepository : IWorkflowRepository
                 ToStateKey = transition.ToStateKey,
                 Name = transition.Name,
                 Description = transition.Description,
-                RequiredPermission = transition.RequiredPermission,
+                RequiredRoleId = transition.RequiredRoleId,
                 CssClass = transition.CssClass,
                 Icon = transition.Icon,
                 SortOrder = transition.SortOrder,
@@ -422,7 +422,7 @@ internal class WorkflowRepository : IWorkflowRepository
         entity.ToStateKey = model.ToStateKey;
         entity.Name = model.Name;
         entity.Description = model.Description;
-        entity.RequiredPermission = model.RequiredPermission;
+        entity.RequiredRoleId = model.RequiredRoleId;
         entity.CssClass = model.CssClass;
         entity.Icon = model.Icon;
         entity.SortOrder = model.SortOrder;
