@@ -470,8 +470,24 @@ public abstract class Db<T> : DbContext, IDb where T : Db<T>
         mb.Entity<Data.Taxonomy>().Property(t => t.Slug).IsRequired().HasMaxLength(64);
         mb.Entity<Data.Taxonomy>().HasIndex(t => new { t.GroupId, t.Type, t.Slug }).IsUnique();
 
+        // Configure WorkflowDefinition
+        mb.Entity<Data.WorkflowDefinition>().Property(w => w.Id).ValueGeneratedNever();
+        mb.Entity<Data.WorkflowDefinition>().Property(w => w.Name).IsRequired().HasMaxLength(128);
+        mb.Entity<Data.WorkflowDefinition>().Property(w => w.Description).HasMaxLength(512);
+        mb.Entity<Data.WorkflowDefinition>().Property(w => w.ContentTypes).IsRequired().HasMaxLength(256);
+        mb.Entity<Data.WorkflowDefinition>().Property(w => w.InitialState).IsRequired().HasMaxLength(64);
+
+        // Configure WorkflowState
+        mb.Entity<Data.WorkflowState>().Property(s => s.Id).ValueGeneratedNever();
+        mb.Entity<Data.WorkflowState>().Property(s => s.Key).IsRequired().HasMaxLength(64);
+        mb.Entity<Data.WorkflowState>().Property(s => s.Name).IsRequired().HasMaxLength(128);
+        mb.Entity<Data.WorkflowState>().Property(s => s.Description).HasMaxLength(512);
+        mb.Entity<Data.WorkflowState>().Property(s => s.Color).HasMaxLength(16);
+        mb.Entity<Data.WorkflowState>().Property(s => s.Icon).HasMaxLength(64);
+
         // Configure WorkflowTransitions to ignore the RequiredPermission column that exists in DB but not in model
         mb.Entity<Data.WorkflowTransition>().ToTable("WorkflowTransitions");
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.Id).ValueGeneratedNever();
         mb.Entity<Data.WorkflowTransition>().Property(t => t.FromStateKey).IsRequired().HasMaxLength(64);
         mb.Entity<Data.WorkflowTransition>().Property(t => t.ToStateKey).IsRequired().HasMaxLength(64);
         mb.Entity<Data.WorkflowTransition>().Property(t => t.Name).IsRequired().HasMaxLength(128);
