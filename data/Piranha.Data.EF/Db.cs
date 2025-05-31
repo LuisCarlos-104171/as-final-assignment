@@ -237,6 +237,16 @@ public abstract class Db<T> : DbContext, IDb where T : Db<T>
     public DbSet<Data.WorkflowTransition> WorkflowTransitions { get; set; }
 
     /// <summary>
+    /// Gets/sets the workflow role set.
+    /// </summary>
+    public DbSet<Data.WorkflowRole> WorkflowRoles { get; set; }
+
+    /// <summary>
+    /// Gets/sets the workflow role permission set.
+    /// </summary>
+    public DbSet<Data.WorkflowRolePermission> WorkflowRolePermissions { get; set; }
+
+    /// <summary>
     /// Default constructor.
     /// </summary>
     /// <param name="options">Configuration options</param>
@@ -469,6 +479,43 @@ public abstract class Db<T> : DbContext, IDb where T : Db<T>
         mb.Entity<Data.Taxonomy>().Property(t => t.Title).IsRequired().HasMaxLength(64);
         mb.Entity<Data.Taxonomy>().Property(t => t.Slug).IsRequired().HasMaxLength(64);
         mb.Entity<Data.Taxonomy>().HasIndex(t => new { t.GroupId, t.Type, t.Slug }).IsUnique();
+
+        // Workflow entities
+        mb.Entity<Data.WorkflowDefinition>().ToTable("Piranha_WorkflowDefinitions");
+        mb.Entity<Data.WorkflowDefinition>().Property(w => w.Name).IsRequired().HasMaxLength(128);
+        mb.Entity<Data.WorkflowDefinition>().Property(w => w.Description).HasMaxLength(512);
+        mb.Entity<Data.WorkflowDefinition>().Property(w => w.ContentTypes).IsRequired().HasMaxLength(256);
+        mb.Entity<Data.WorkflowDefinition>().Property(w => w.InitialState).IsRequired().HasMaxLength(64);
+
+        mb.Entity<Data.WorkflowState>().ToTable("Piranha_WorkflowStates");
+        mb.Entity<Data.WorkflowState>().Property(s => s.Key).IsRequired().HasMaxLength(64);
+        mb.Entity<Data.WorkflowState>().Property(s => s.Name).IsRequired().HasMaxLength(128);
+        mb.Entity<Data.WorkflowState>().Property(s => s.Description).HasMaxLength(512);
+        mb.Entity<Data.WorkflowState>().Property(s => s.Color).HasMaxLength(16);
+        mb.Entity<Data.WorkflowState>().Property(s => s.Icon).HasMaxLength(64);
+        mb.Entity<Data.WorkflowState>().HasIndex(s => new { s.WorkflowDefinitionId, s.Key }).IsUnique();
+
+        mb.Entity<Data.WorkflowTransition>().ToTable("Piranha_WorkflowTransitions");
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.FromStateKey).IsRequired().HasMaxLength(64);
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.ToStateKey).IsRequired().HasMaxLength(64);
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.Name).IsRequired().HasMaxLength(128);
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.Description).HasMaxLength(512);
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.RequiredPermission).HasMaxLength(128);
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.CssClass).HasMaxLength(64);
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.Icon).HasMaxLength(64);
+        mb.Entity<Data.WorkflowTransition>().Property(t => t.NotificationTemplate).HasMaxLength(1024);
+
+        mb.Entity<Data.WorkflowRole>().ToTable("Piranha_WorkflowRoles");
+        mb.Entity<Data.WorkflowRole>().Property(r => r.RoleKey).IsRequired().HasMaxLength(64);
+        mb.Entity<Data.WorkflowRole>().Property(r => r.DisplayName).IsRequired().HasMaxLength(128);
+        mb.Entity<Data.WorkflowRole>().Property(r => r.Description).HasMaxLength(512);
+        mb.Entity<Data.WorkflowRole>().Property(r => r.AllowedFromStates).HasMaxLength(256);
+        mb.Entity<Data.WorkflowRole>().Property(r => r.AllowedToStates).HasMaxLength(256);
+        mb.Entity<Data.WorkflowRole>().HasIndex(r => new { r.WorkflowDefinitionId, r.RoleKey }).IsUnique();
+
+        mb.Entity<Data.WorkflowRolePermission>().ToTable("Piranha_WorkflowRolePermissions");
+        mb.Entity<Data.WorkflowRolePermission>().Property(p => p.Conditions).HasMaxLength(1024);
+        mb.Entity<Data.WorkflowRolePermission>().HasIndex(p => new { p.WorkflowRoleId, p.WorkflowTransitionId }).IsUnique();
     }
 
     /// <summary>

@@ -54,7 +54,7 @@ public static class ManagerModuleExtensions
         services.AddScoped<PageService>();
         services.AddScoped<PostService>();
         services.AddScoped<SiteService>();
-        services.AddScoped<WorkflowService>();
+        // WorkflowService removed - replaced with dynamic workflow system
         services.AddScoped<WorkflowDefinitionManagerService>();
         services.AddScoped<NotificationService>();
 

@@ -39,6 +39,8 @@ internal class WorkflowRepository : IWorkflowRepository
             .AsNoTracking()
             .Include(w => w.States)
             .Include(w => w.Transitions)
+                .ThenInclude(t => t.RolePermissions)
+            .Include(w => w.Roles)
             .OrderBy(w => w.Name)
             .ToListAsync();
 
@@ -56,6 +58,8 @@ internal class WorkflowRepository : IWorkflowRepository
             .AsNoTracking()
             .Include(w => w.States)
             .Include(w => w.Transitions)
+                .ThenInclude(t => t.RolePermissions)
+            .Include(w => w.Roles)
             .FirstOrDefaultAsync(w => w.Id == id);
 
         return workflow != null ? CreateModel(workflow) : null;
@@ -102,13 +106,22 @@ internal class WorkflowRepository : IWorkflowRepository
     /// <param name="model">The workflow definition</param>
     public async Task SaveAsync(Models.WorkflowDefinition model)
     {
-        var workflow = await _db.WorkflowDefinitions
-            .Include(w => w.States)
-            .Include(w => w.Transitions)
-            .FirstOrDefaultAsync(w => w.Id == model.Id);
+        WorkflowDefinition workflow = null;
+        
+        // Only try to load existing workflow if we have a valid non-empty GUID
+        if (model.Id != Guid.Empty)
+        {
+            workflow = await _db.WorkflowDefinitions
+                .Include(w => w.States)
+                .Include(w => w.Transitions)
+                    .ThenInclude(t => t.RolePermissions)
+                .Include(w => w.Roles)
+                .FirstOrDefaultAsync(w => w.Id == model.Id);
+        }
 
         if (workflow == null)
         {
+            // Create new workflow
             workflow = new WorkflowDefinition
             {
                 Id = model.Id != Guid.Empty ? model.Id : Guid.NewGuid(),
@@ -118,7 +131,25 @@ internal class WorkflowRepository : IWorkflowRepository
         }
 
         UpdateEntity(workflow, model);
-        await _db.SaveChangesAsync();
+        
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            // Handle concurrency conflicts by reloading and retrying once
+            foreach (var entry in ex.Entries)
+            {
+                if (entry.Entity is WorkflowDefinition)
+                {
+                    await entry.ReloadAsync();
+                }
+            }
+            // Retry the update
+            UpdateEntity(workflow, model);
+            await _db.SaveChangesAsync();
+        }
     }
 
     /// <summary>
@@ -265,6 +296,132 @@ internal class WorkflowRepository : IWorkflowRepository
     }
 
     /// <summary>
+    /// Gets a workflow transition by its id.
+    /// </summary>
+    /// <param name="id">The transition id</param>
+    /// <returns>The workflow transition</returns>
+    public async Task<Models.WorkflowTransition> GetTransitionByIdAsync(Guid id)
+    {
+        var transition = await _db.WorkflowTransitions
+            .AsNoTracking()
+            .Include(t => t.RolePermissions)
+            .FirstOrDefaultAsync(t => t.Id == id);
+
+        return transition != null ? CreateTransitionModel(transition) : null;
+    }
+
+    /// <summary>
+    /// Gets all workflow roles for the given workflow definition.
+    /// </summary>
+    /// <param name="workflowId">The workflow definition id</param>
+    /// <returns>The workflow roles</returns>
+    public async Task<IEnumerable<Models.WorkflowRole>> GetRolesAsync(Guid workflowId)
+    {
+        var roles = await _db.WorkflowRoles
+            .AsNoTracking()
+            .Where(r => r.WorkflowDefinitionId == workflowId)
+            .OrderBy(r => r.Priority)
+            .ToListAsync();
+
+        return roles.Select(r => CreateRoleModel(r));
+    }
+
+    /// <summary>
+    /// Saves a workflow role.
+    /// </summary>
+    /// <param name="role">The workflow role</param>
+    public async Task SaveRoleAsync(Models.WorkflowRole role)
+    {
+        var entity = await _db.WorkflowRoles
+            .FirstOrDefaultAsync(r => r.Id == role.Id);
+
+        if (entity == null)
+        {
+            entity = new WorkflowRole
+            {
+                Id = role.Id != Guid.Empty ? role.Id : Guid.NewGuid(),
+                WorkflowDefinitionId = role.WorkflowDefinitionId
+            };
+            _db.WorkflowRoles.Add(entity);
+        }
+
+        UpdateRoleEntity(entity, role);
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Deletes a workflow role.
+    /// </summary>
+    /// <param name="id">The role id</param>
+    public async Task DeleteRoleAsync(Guid id)
+    {
+        var role = await _db.WorkflowRoles
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (role != null)
+        {
+            _db.WorkflowRoles.Remove(role);
+            await _db.SaveChangesAsync();
+        }
+    }
+
+    /// <summary>
+    /// Gets workflow role permissions for a specific transition.
+    /// </summary>
+    /// <param name="transitionId">The transition id</param>
+    /// <returns>The role permissions</returns>
+    public async Task<IEnumerable<Models.WorkflowRolePermission>> GetRolePermissionsAsync(Guid transitionId)
+    {
+        var permissions = await _db.WorkflowRolePermissions
+            .AsNoTracking()
+            .Include(p => p.WorkflowRole)
+            .Where(p => p.WorkflowTransitionId == transitionId)
+            .ToListAsync();
+
+        return permissions.Select(p => CreateRolePermissionModel(p));
+    }
+
+    /// <summary>
+    /// Saves a workflow role permission.
+    /// </summary>
+    /// <param name="permission">The role permission</param>
+    public async Task SaveRolePermissionAsync(Models.WorkflowRolePermission permission)
+    {
+        var entity = await _db.WorkflowRolePermissions
+            .FirstOrDefaultAsync(p => p.Id == permission.Id);
+
+        if (entity == null)
+        {
+            entity = new WorkflowRolePermission
+            {
+                Id = permission.Id != Guid.Empty ? permission.Id : Guid.NewGuid(),
+                WorkflowRoleId = permission.WorkflowRoleId,
+                WorkflowTransitionId = permission.WorkflowTransitionId
+            };
+            _db.WorkflowRolePermissions.Add(entity);
+        }
+
+        UpdateRolePermissionEntity(entity, permission);
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Deletes a workflow role permission.
+    /// </summary>
+    /// <param name="id">The permission id</param>
+    public async Task DeleteRolePermissionAsync(Guid id)
+    {
+        var permission = await _db.WorkflowRolePermissions
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+        if (permission != null)
+        {
+            _db.WorkflowRolePermissions.Remove(permission);
+            await _db.SaveChangesAsync();
+        }
+    }
+
+    /// <summary>
     /// Creates a model from the data entity.
     /// </summary>
     /// <param name="entity">The data entity</param>
@@ -283,7 +440,8 @@ internal class WorkflowRepository : IWorkflowRepository
             Created = entity.Created,
             LastModified = entity.LastModified,
             States = entity.States?.Select(CreateStateModel).ToList() ?? new List<Models.WorkflowState>(),
-            Transitions = entity.Transitions?.Select(CreateTransitionModel).ToList() ?? new List<Models.WorkflowTransition>()
+            Transitions = entity.Transitions?.Select(CreateTransitionModel).ToList() ?? new List<Models.WorkflowTransition>(),
+            Roles = entity.Roles?.Select(CreateRoleModel).ToList() ?? new List<Models.WorkflowRole>()
         };
     }
 
@@ -331,7 +489,8 @@ internal class WorkflowRepository : IWorkflowRepository
             SortOrder = entity.SortOrder,
             RequiresComment = entity.RequiresComment,
             SendNotification = entity.SendNotification,
-            NotificationTemplate = entity.NotificationTemplate
+            NotificationTemplate = entity.NotificationTemplate,
+            RolePermissions = entity.RolePermissions?.Select(CreateRolePermissionModel).ToList() ?? new List<Models.WorkflowRolePermission>()
         };
     }
 
@@ -351,45 +510,227 @@ internal class WorkflowRepository : IWorkflowRepository
         entity.LastModified = DateTime.Now;
 
         // Update states
+        var existingStates = entity.States?.ToList() ?? new List<WorkflowState>();
         entity.States.Clear();
-        foreach (var state in model.States)
+        
+        foreach (var stateModel in model.States)
         {
-            entity.States.Add(new WorkflowState
+            WorkflowState stateEntity;
+            
+            if (stateModel.Id != Guid.Empty)
             {
-                Id = state.Id != Guid.Empty ? state.Id : Guid.NewGuid(),
-                WorkflowDefinitionId = entity.Id,
-                Key = state.Key,
-                Name = state.Name,
-                Description = state.Description,
-                Color = state.Color,
-                Icon = state.Icon,
-                SortOrder = state.SortOrder,
-                IsPublished = state.IsPublished,
-                IsInitial = state.IsInitial,
-                IsFinal = state.IsFinal
-            });
+                // Try to reuse existing entity if it exists
+                stateEntity = existingStates.FirstOrDefault(s => s.Id == stateModel.Id);
+                if (stateEntity != null)
+                {
+                    // Update existing entity
+                    stateEntity.Key = stateModel.Key;
+                    stateEntity.Name = stateModel.Name;
+                    stateEntity.Description = stateModel.Description;
+                    stateEntity.Color = stateModel.Color;
+                    stateEntity.Icon = stateModel.Icon;
+                    stateEntity.SortOrder = stateModel.SortOrder;
+                    stateEntity.IsPublished = stateModel.IsPublished;
+                    stateEntity.IsInitial = stateModel.IsInitial;
+                    stateEntity.IsFinal = stateModel.IsFinal;
+                }
+                else
+                {
+                    // Create new entity with specified ID
+                    stateEntity = new WorkflowState
+                    {
+                        Id = stateModel.Id,
+                        WorkflowDefinitionId = entity.Id,
+                        Key = stateModel.Key,
+                        Name = stateModel.Name,
+                        Description = stateModel.Description,
+                        Color = stateModel.Color,
+                        Icon = stateModel.Icon,
+                        SortOrder = stateModel.SortOrder,
+                        IsPublished = stateModel.IsPublished,
+                        IsInitial = stateModel.IsInitial,
+                        IsFinal = stateModel.IsFinal
+                    };
+                }
+            }
+            else
+            {
+                // Create new entity with new ID
+                stateEntity = new WorkflowState
+                {
+                    Id = Guid.NewGuid(),
+                    WorkflowDefinitionId = entity.Id,
+                    Key = stateModel.Key,
+                    Name = stateModel.Name,
+                    Description = stateModel.Description,
+                    Color = stateModel.Color,
+                    Icon = stateModel.Icon,
+                    SortOrder = stateModel.SortOrder,
+                    IsPublished = stateModel.IsPublished,
+                    IsInitial = stateModel.IsInitial,
+                    IsFinal = stateModel.IsFinal
+                };
+            }
+            
+            entity.States.Add(stateEntity);
         }
 
         // Update transitions
+        var existingTransitions = entity.Transitions?.ToList() ?? new List<WorkflowTransition>();
         entity.Transitions.Clear();
-        foreach (var transition in model.Transitions)
+        
+        foreach (var transitionModel in model.Transitions)
         {
-            entity.Transitions.Add(new WorkflowTransition
+            WorkflowTransition transitionEntity;
+            
+            if (transitionModel.Id != Guid.Empty)
             {
-                Id = transition.Id != Guid.Empty ? transition.Id : Guid.NewGuid(),
-                WorkflowDefinitionId = entity.Id,
-                FromStateKey = transition.FromStateKey,
-                ToStateKey = transition.ToStateKey,
-                Name = transition.Name,
-                Description = transition.Description,
-                RequiredPermission = transition.RequiredPermission,
-                CssClass = transition.CssClass,
-                Icon = transition.Icon,
-                SortOrder = transition.SortOrder,
-                RequiresComment = transition.RequiresComment,
-                SendNotification = transition.SendNotification,
-                NotificationTemplate = transition.NotificationTemplate
-            });
+                // Try to reuse existing entity if it exists
+                transitionEntity = existingTransitions.FirstOrDefault(t => t.Id == transitionModel.Id);
+                if (transitionEntity != null)
+                {
+                    // Update existing entity
+                    transitionEntity.FromStateKey = transitionModel.FromStateKey;
+                    transitionEntity.ToStateKey = transitionModel.ToStateKey;
+                    transitionEntity.Name = transitionModel.Name;
+                    transitionEntity.Description = transitionModel.Description;
+                    transitionEntity.RequiredPermission = transitionModel.RequiredPermission;
+                    transitionEntity.CssClass = transitionModel.CssClass;
+                    transitionEntity.Icon = transitionModel.Icon;
+                    transitionEntity.SortOrder = transitionModel.SortOrder;
+                    transitionEntity.RequiresComment = transitionModel.RequiresComment;
+                    transitionEntity.SendNotification = transitionModel.SendNotification;
+                    transitionEntity.NotificationTemplate = transitionModel.NotificationTemplate;
+                    
+                    // Update role permissions
+                    transitionEntity.RolePermissions.Clear();
+                }
+                else
+                {
+                    // Create new entity with specified ID
+                    transitionEntity = new WorkflowTransition
+                    {
+                        Id = transitionModel.Id,
+                        WorkflowDefinitionId = entity.Id,
+                        FromStateKey = transitionModel.FromStateKey,
+                        ToStateKey = transitionModel.ToStateKey,
+                        Name = transitionModel.Name,
+                        Description = transitionModel.Description,
+                        RequiredPermission = transitionModel.RequiredPermission,
+                        CssClass = transitionModel.CssClass,
+                        Icon = transitionModel.Icon,
+                        SortOrder = transitionModel.SortOrder,
+                        RequiresComment = transitionModel.RequiresComment,
+                        SendNotification = transitionModel.SendNotification,
+                        NotificationTemplate = transitionModel.NotificationTemplate
+                    };
+                }
+            }
+            else
+            {
+                // Create new entity with new ID
+                transitionEntity = new WorkflowTransition
+                {
+                    Id = Guid.NewGuid(),
+                    WorkflowDefinitionId = entity.Id,
+                    FromStateKey = transitionModel.FromStateKey,
+                    ToStateKey = transitionModel.ToStateKey,
+                    Name = transitionModel.Name,
+                    Description = transitionModel.Description,
+                    RequiredPermission = transitionModel.RequiredPermission,
+                    CssClass = transitionModel.CssClass,
+                    Icon = transitionModel.Icon,
+                    SortOrder = transitionModel.SortOrder,
+                    RequiresComment = transitionModel.RequiresComment,
+                    SendNotification = transitionModel.SendNotification,
+                    NotificationTemplate = transitionModel.NotificationTemplate
+                };
+            }
+
+            // Add role permissions
+            foreach (var permission in transitionModel.RolePermissions)
+            {
+                transitionEntity.RolePermissions.Add(new WorkflowRolePermission
+                {
+                    Id = permission.Id != Guid.Empty ? permission.Id : Guid.NewGuid(),
+                    WorkflowRoleId = permission.WorkflowRoleId,
+                    WorkflowTransitionId = transitionEntity.Id,
+                    CanExecute = permission.CanExecute,
+                    RequiresApproval = permission.RequiresApproval,
+                    Conditions = permission.Conditions
+                });
+            }
+
+            entity.Transitions.Add(transitionEntity);
+        }
+
+        // Update roles
+        var existingRoles = entity.Roles?.ToList() ?? new List<WorkflowRole>();
+        entity.Roles.Clear();
+        
+        foreach (var roleModel in model.Roles)
+        {
+            WorkflowRole roleEntity;
+            
+            if (roleModel.Id != Guid.Empty)
+            {
+                // Try to reuse existing entity if it exists
+                roleEntity = existingRoles.FirstOrDefault(r => r.Id == roleModel.Id);
+                if (roleEntity != null)
+                {
+                    // Update existing entity
+                    roleEntity.RoleKey = roleModel.RoleKey;
+                    roleEntity.DisplayName = roleModel.DisplayName;
+                    roleEntity.Description = roleModel.Description;
+                    roleEntity.Priority = roleModel.Priority;
+                    roleEntity.CanCreate = roleModel.CanCreate;
+                    roleEntity.CanEdit = roleModel.CanEdit;
+                    roleEntity.CanDelete = roleModel.CanDelete;
+                    roleEntity.CanViewAll = roleModel.CanViewAll;
+                    roleEntity.AllowedFromStates = roleModel.AllowedFromStates;
+                    roleEntity.AllowedToStates = roleModel.AllowedToStates;
+                }
+                else
+                {
+                    // Create new entity with specified ID
+                    roleEntity = new WorkflowRole
+                    {
+                        Id = roleModel.Id,
+                        WorkflowDefinitionId = entity.Id,
+                        RoleKey = roleModel.RoleKey,
+                        DisplayName = roleModel.DisplayName,
+                        Description = roleModel.Description,
+                        Priority = roleModel.Priority,
+                        CanCreate = roleModel.CanCreate,
+                        CanEdit = roleModel.CanEdit,
+                        CanDelete = roleModel.CanDelete,
+                        CanViewAll = roleModel.CanViewAll,
+                        AllowedFromStates = roleModel.AllowedFromStates,
+                        AllowedToStates = roleModel.AllowedToStates
+                    };
+                }
+            }
+            else
+            {
+                // Create new entity with new ID
+                roleEntity = new WorkflowRole
+                {
+                    Id = Guid.NewGuid(),
+                    WorkflowDefinitionId = entity.Id,
+                    RoleKey = roleModel.RoleKey,
+                    DisplayName = roleModel.DisplayName,
+                    Description = roleModel.Description,
+                    Priority = roleModel.Priority,
+                    CanCreate = roleModel.CanCreate,
+                    CanEdit = roleModel.CanEdit,
+                    CanDelete = roleModel.CanDelete,
+                    CanViewAll = roleModel.CanViewAll,
+                    AllowedFromStates = roleModel.AllowedFromStates,
+                    AllowedToStates = roleModel.AllowedToStates
+                };
+            }
+            
+            entity.Roles.Add(roleEntity);
         }
     }
 
@@ -429,5 +770,93 @@ internal class WorkflowRepository : IWorkflowRepository
         entity.RequiresComment = model.RequiresComment;
         entity.SendNotification = model.SendNotification;
         entity.NotificationTemplate = model.NotificationTemplate;
+
+        // Update role permissions
+        entity.RolePermissions.Clear();
+        foreach (var permission in model.RolePermissions)
+        {
+            entity.RolePermissions.Add(new WorkflowRolePermission
+            {
+                Id = permission.Id != Guid.Empty ? permission.Id : Guid.NewGuid(),
+                WorkflowRoleId = permission.WorkflowRoleId,
+                WorkflowTransitionId = entity.Id,
+                CanExecute = permission.CanExecute,
+                RequiresApproval = permission.RequiresApproval,
+                Conditions = permission.Conditions
+            });
+        }
+    }
+
+    /// <summary>
+    /// Creates a role model from the data entity.
+    /// </summary>
+    /// <param name="entity">The data entity</param>
+    /// <returns>The model</returns>
+    private Models.WorkflowRole CreateRoleModel(WorkflowRole entity)
+    {
+        return new Models.WorkflowRole
+        {
+            Id = entity.Id,
+            WorkflowDefinitionId = entity.WorkflowDefinitionId,
+            RoleKey = entity.RoleKey,
+            DisplayName = entity.DisplayName,
+            Description = entity.Description,
+            Priority = entity.Priority,
+            CanCreate = entity.CanCreate,
+            CanEdit = entity.CanEdit,
+            CanDelete = entity.CanDelete,
+            CanViewAll = entity.CanViewAll,
+            AllowedFromStates = entity.AllowedFromStates,
+            AllowedToStates = entity.AllowedToStates
+        };
+    }
+
+    /// <summary>
+    /// Creates a role permission model from the data entity.
+    /// </summary>
+    /// <param name="entity">The data entity</param>
+    /// <returns>The model</returns>
+    private Models.WorkflowRolePermission CreateRolePermissionModel(WorkflowRolePermission entity)
+    {
+        return new Models.WorkflowRolePermission
+        {
+            Id = entity.Id,
+            WorkflowRoleId = entity.WorkflowRoleId,
+            WorkflowTransitionId = entity.WorkflowTransitionId,
+            CanExecute = entity.CanExecute,
+            RequiresApproval = entity.RequiresApproval,
+            Conditions = entity.Conditions
+        };
+    }
+
+    /// <summary>
+    /// Updates the role entity from the model.
+    /// </summary>
+    /// <param name="entity">The data entity</param>
+    /// <param name="model">The model</param>
+    private void UpdateRoleEntity(WorkflowRole entity, Models.WorkflowRole model)
+    {
+        entity.RoleKey = model.RoleKey;
+        entity.DisplayName = model.DisplayName;
+        entity.Description = model.Description;
+        entity.Priority = model.Priority;
+        entity.CanCreate = model.CanCreate;
+        entity.CanEdit = model.CanEdit;
+        entity.CanDelete = model.CanDelete;
+        entity.CanViewAll = model.CanViewAll;
+        entity.AllowedFromStates = model.AllowedFromStates;
+        entity.AllowedToStates = model.AllowedToStates;
+    }
+
+    /// <summary>
+    /// Updates the role permission entity from the model.
+    /// </summary>
+    /// <param name="entity">The data entity</param>
+    /// <param name="model">The model</param>
+    private void UpdateRolePermissionEntity(WorkflowRolePermission entity, Models.WorkflowRolePermission model)
+    {
+        entity.CanExecute = model.CanExecute;
+        entity.RequiresApproval = model.RequiresApproval;
+        entity.Conditions = model.Conditions;
     }
 }

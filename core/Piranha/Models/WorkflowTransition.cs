@@ -98,4 +98,9 @@ public class WorkflowTransition
     /// Gets/sets the workflow definition.
     /// </summary>
     public WorkflowDefinition WorkflowDefinition { get; set; }
+
+    /// <summary>
+    /// Gets/sets the role permissions for this transition.
+    /// </summary>
+    public IList<WorkflowRolePermission> RolePermissions { get; set; } = new List<WorkflowRolePermission>();
 }

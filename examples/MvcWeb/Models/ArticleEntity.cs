@@ -35,6 +35,63 @@ namespace MvcWeb.Models
         public ArticleStatus Status { get; set; }
 
         /// <summary>
+        /// Gets/sets the workflow definition ID for this article.
+        /// Nullable for backward compatibility with existing database.
+        /// </summary>
+        public Guid? WorkflowId { get; set; }
+
+        /// <summary>
+        /// Gets/sets the current workflow state key.
+        /// Nullable for backward compatibility with existing database.
+        /// </summary>
+        [StringLength(64)]
+        public string? WorkflowState { get; set; }
+
+        /// <summary>
+        /// Gets/sets the author's user ID.
+        /// Nullable for backward compatibility with existing database.
+        /// </summary>
+        public string? AuthorId { get; set; }
+
+        /// <summary>
+        /// Gets/sets the reviewer's name.
+        /// </summary>
+        [StringLength(128)]
+        public string? ReviewedBy { get; set; }
+
+        /// <summary>
+        /// Gets/sets when the article was reviewed.
+        /// </summary>
+        public DateTime? ReviewedAt { get; set; }
+
+        /// <summary>
+        /// Gets/sets the review comments.
+        /// </summary>
+        public string? ReviewComments { get; set; }
+
+        /// <summary>
+        /// Gets/sets the approver's name.
+        /// </summary>
+        [StringLength(128)]
+        public string? ApprovedBy { get; set; }
+
+        /// <summary>
+        /// Gets/sets when the article was approved.
+        /// </summary>
+        public DateTime? ApprovedAt { get; set; }
+
+        /// <summary>
+        /// Gets/sets the approval comments.
+        /// </summary>
+        public string? ApprovalComments { get; set; }
+
+        /// <summary>
+        /// Gets/sets the article summary.
+        /// </summary>
+        [StringLength(500)]
+        public string? Summary { get; set; }
+
+        /// <summary>
         /// Gets/sets the title.
         /// </summary>
         [Required]

@@ -1,21 +1,40 @@
-@inject Piranha.Manager.Services.WorkflowService WorkflowService
 @inject ManagerLocalizer Localizer
 @model Guid
-
-@{
-    var contentType = ViewContext.RouteData.Values["controller"]?.ToString()?.ToLower() ?? "unknown";
-    if (contentType == "pageapi") contentType = "page";
-    if (contentType == "postapi") contentType = "post";
-    
-    var userId = User.Identity?.Name ?? "anonymous";
-    var workflowModel = await WorkflowService.GetWorkflowTransitionsAsync(contentType, Model, userId);
-}
 
 <div class="card">
     <div class="card-header">
         <span>@Localizer.General["Workflow Status"]</span>
     </div>
     <div class="card-body">
-        @await Html.PartialAsync("~/Areas/Manager/Views/Shared/Partial/_WorkflowActions.cshtml", workflowModel)
+        <div id="dynamic-workflow-panel" data-content-id="@Model">
+            <p class="text-muted">@Localizer.General["Loading workflow information..."]</p>
+        </div>
     </div>
 </div>
+
+<script>
+$(document).ready(function() {
+    var contentId = '@Model';
+    var contentType = '@(ViewContext.RouteData.Values["controller"]?.ToString()?.ToLower() ?? "content")';
+    
+    if (contentType === 'pageapi') contentType = 'page';
+    if (contentType === 'postapi') contentType = 'post';
+    
+    // Load workflow information via the dynamic API
+    $.get('/manager/api/dynamicworkflow/workflows/' + contentType, function(workflows) {
+        if (workflows && workflows.length > 0) {
+            var workflow = workflows[0]; // Use the first available workflow
+            loadWorkflowTransitions(workflow.id, contentId);
+        } else {
+            $('#dynamic-workflow-panel').html('<p class="text-muted">@Localizer.General["No workflow configured for this content type."]</p>');
+        }
+    }).fail(function() {
+        $('#dynamic-workflow-panel').html('<p class="text-warning">@Localizer.General["Failed to load workflow information."]</p>');
+    });
+    
+    function loadWorkflowTransitions(workflowId, contentId) {
+        // This would need to be implemented based on your specific workflow needs
+        $('#dynamic-workflow-panel').html('<p class="text-info">@Localizer.General["Dynamic workflow panel - role-based transitions will be displayed here."]</p>');
+    }
+});
+</script>

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Piranha.Data.EF.SQLite;
 
@@ -10,9 +11,11 @@ using Piranha.Data.EF.SQLite;
 namespace Piranha.Data.EF.SQLite.Migrations
 {
     [DbContext(typeof(SQLiteDb))]
-    partial class DbModelSnapshot : ModelSnapshot
+    [Migration("20250531142432_AnotherTwo")]
+    partial class AnotherTwo
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.0");
@@ -1442,93 +1445,7 @@ namespace Piranha.Data.EF.SQLite.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Piranha_WorkflowDefinitions", (string)null);
-                });
-
-            modelBuilder.Entity("Piranha.Data.WorkflowRole", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("AllowedFromStates")
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("AllowedToStates")
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("CanCreate")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("CanDelete")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("CanEdit")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("CanViewAll")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DisplayName")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Priority")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("RoleKey")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("WorkflowDefinitionId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("WorkflowDefinitionId", "RoleKey")
-                        .IsUnique();
-
-                    b.ToTable("Piranha_WorkflowRoles", (string)null);
-                });
-
-            modelBuilder.Entity("Piranha.Data.WorkflowRolePermission", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("CanExecute")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Conditions")
-                        .HasMaxLength(1024)
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("RequiresApproval")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("WorkflowRoleId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("WorkflowTransitionId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("WorkflowTransitionId");
-
-                    b.HasIndex("WorkflowRoleId", "WorkflowTransitionId")
-                        .IsUnique();
-
-                    b.ToTable("Piranha_WorkflowRolePermissions", (string)null);
+                    b.ToTable("WorkflowDefinitions");
                 });
 
             modelBuilder.Entity("Piranha.Data.WorkflowState", b =>
@@ -1576,10 +1493,9 @@ namespace Piranha.Data.EF.SQLite.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("WorkflowDefinitionId", "Key")
-                        .IsUnique();
+                    b.HasIndex("WorkflowDefinitionId");
 
-                    b.ToTable("Piranha_WorkflowStates", (string)null);
+                    b.ToTable("WorkflowStates");
                 });
 
             modelBuilder.Entity("Piranha.Data.WorkflowTransition", b =>
@@ -1639,7 +1555,7 @@ namespace Piranha.Data.EF.SQLite.Migrations
 
                     b.HasIndex("WorkflowDefinitionId");
 
-                    b.ToTable("Piranha_WorkflowTransitions", (string)null);
+                    b.ToTable("WorkflowTransitions");
                 });
 
             modelBuilder.Entity("Piranha.Data.Alias", b =>
@@ -2050,36 +1966,6 @@ namespace Piranha.Data.EF.SQLite.Migrations
                     b.Navigation("Blog");
                 });
 
-            modelBuilder.Entity("Piranha.Data.WorkflowRole", b =>
-                {
-                    b.HasOne("Piranha.Data.WorkflowDefinition", "WorkflowDefinition")
-                        .WithMany("Roles")
-                        .HasForeignKey("WorkflowDefinitionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("WorkflowDefinition");
-                });
-
-            modelBuilder.Entity("Piranha.Data.WorkflowRolePermission", b =>
-                {
-                    b.HasOne("Piranha.Data.WorkflowRole", "WorkflowRole")
-                        .WithMany("RolePermissions")
-                        .HasForeignKey("WorkflowRoleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Piranha.Data.WorkflowTransition", "WorkflowTransition")
-                        .WithMany("RolePermissions")
-                        .HasForeignKey("WorkflowTransitionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("WorkflowRole");
-
-                    b.Navigation("WorkflowTransition");
-                });
-
             modelBuilder.Entity("Piranha.Data.WorkflowState", b =>
                 {
                     b.HasOne("Piranha.Data.WorkflowDefinition", "WorkflowDefinition")
@@ -2170,21 +2056,9 @@ namespace Piranha.Data.EF.SQLite.Migrations
 
             modelBuilder.Entity("Piranha.Data.WorkflowDefinition", b =>
                 {
-                    b.Navigation("Roles");
-
                     b.Navigation("States");
 
                     b.Navigation("Transitions");
-                });
-
-            modelBuilder.Entity("Piranha.Data.WorkflowRole", b =>
-                {
-                    b.Navigation("RolePermissions");
-                });
-
-            modelBuilder.Entity("Piranha.Data.WorkflowTransition", b =>
-                {
-                    b.Navigation("RolePermissions");
                 });
 #pragma warning restore 612, 618
         }

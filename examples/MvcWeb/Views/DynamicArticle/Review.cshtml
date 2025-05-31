@@ -1,0 +1,296 @@
+@model MvcWeb.Models.DynamicArticleSubmissionModel
+@{
+    ViewData["Title"] = "Review Article - " + Model.Title;
+    var userRoles = ViewBag.UserRoles as IEnumerable<string>;
+}
+
+<div class="container">
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h2 class="mb-0">@Model.Title</h2>
+                        <span class="badge @Model.GetStateBadgeClass() fs-6">
+                            <i class="@Model.GetStateIcon()"></i> @Model.CurrentState?.Name
+                        </span>
+                    </div>
+                    <div class="text-muted mt-2">
+                        <small>
+                            <i class="fas fa-user"></i> by @Model.Author
+                            <i class="fas fa-calendar ms-3"></i> @Model.Created.ToString("MMMM dd, yyyy HH:mm")
+                            @if (Model.LastModified.HasValue)
+                            {
+                                <span><i class="fas fa-edit ms-3"></i> Last modified: @Model.LastModified.Value.ToString("MMMM dd, yyyy HH:mm")</span>
+                            }
+                        </small>
+                    </div>
+                </div>
+                <div class="card-body">
+                    @if (!string.IsNullOrEmpty(Model.Summary))
+                    {
+                        <div class="alert alert-light border-start border-primary border-4 mb-4">
+                            <h6><i class="fas fa-info-circle text-primary"></i> Summary</h6>
+                            <p class="mb-0">@Model.Summary</p>
+                        </div>
+                    }
+
+                    <div class="article-content">
+                        @Html.Raw(Model.Content)
+                    </div>
+                </div>
+            </div>
+
+            <!-- Workflow History -->
+            @if (Model.WorkflowHistory.Any())
+            {
+                <div class="card mt-4">
+                    <div class="card-header">
+                        <h5><i class="fas fa-history"></i> Workflow History</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="timeline">
+                            @foreach (var entry in Model.WorkflowHistory.OrderByDescending(h => h.Timestamp))
+                            {
+                                <div class="timeline-item">
+                                    <div class="timeline-marker"></div>
+                                    <div class="timeline-content">
+                                        <h6 class="mb-1">@entry.TransitionName</h6>
+                                        <p class="text-muted mb-1">
+                                            @if (!string.IsNullOrEmpty(entry.FromState))
+                                            {
+                                                <span>@entry.FromState → @entry.ToState</span>
+                                            }
+                                            else
+                                            {
+                                                <span>@entry.ToState</span>
+                                            }
+                                        </p>
+                                        <small class="text-muted">
+                                            by @entry.UserName on @entry.Timestamp.ToString("MMMM dd, yyyy HH:mm")
+                                        </small>
+                                        @if (!string.IsNullOrEmpty(entry.Comments))
+                                        {
+                                            <div class="mt-2">
+                                                <small class="text-muted">Comments: @entry.Comments</small>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="col-lg-4">
+            <!-- Workflow Actions -->
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-tasks"></i> Workflow Actions</h5>
+                </div>
+                <div class="card-body">
+                    @if (TempData["SuccessMessage"] != null)
+                    {
+                        <div class="alert alert-success alert-dismissible fade show" role="alert">
+                            @TempData["SuccessMessage"]
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    }
+
+                    @if (TempData["ErrorMessage"] != null)
+                    {
+                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            @TempData["ErrorMessage"]
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    }
+
+                    @if (Model.AvailableTransitions.Any())
+                    {
+                        <p class="text-muted mb-3">Available actions for your role:</p>
+
+                        @foreach (var transition in Model.AvailableTransitions.OrderBy(t => t.SortOrder))
+                        {
+                            <form method="post" action="@Url.Action("ExecuteTransition")" class="mb-2" 
+                                  onsubmit="return confirmTransition('@transition.Name', @transition.RequiresComment.ToString().ToLower())">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="ArticleId" value="@Model.Id" />
+                                <input type="hidden" name="TransitionId" value="@transition.Id" />
+                                
+                                <div class="d-grid">
+                                    <button type="submit" class="btn @transition.CssClass">
+                                        <i class="@transition.Icon"></i> @transition.Name
+                                    </button>
+                                </div>
+
+                                @if (transition.RequiresComment)
+                                {
+                                    <div class="mt-2">
+                                        <textarea name="Comments" class="form-control" rows="3" 
+                                                  placeholder="Comments are required for this action..."
+                                                  required></textarea>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="mt-2" style="display: none;" id="comments-@transition.Id">
+                                        <textarea name="Comments" class="form-control" rows="3" 
+                                                  placeholder="Optional comments..."></textarea>
+                                    </div>
+                                    <div class="mt-1">
+                                        <small>
+                                            <a href="#" onclick="toggleComments('@transition.Id'); return false;" 
+                                               class="text-muted">Add comments</a>
+                                        </small>
+                                    </div>
+                                }
+
+                                @if (!string.IsNullOrEmpty(transition.Description))
+                                {
+                                    <small class="text-muted">@transition.Description</small>
+                                }
+                            </form>
+                        }
+                    }
+                    else
+                    {
+                        <div class="text-center text-muted">
+                            <i class="fas fa-lock fa-2x"></i>
+                            <p class="mt-2">No actions available for your current role.</p>
+                            @if (Model.AuthorId == User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value)
+                            {
+                                <small>You can view this article because you are the author.</small>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Workflow Information -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h6><i class="fas fa-info-circle"></i> Workflow Information</h6>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <strong>Workflow:</strong> @Model.Workflow?.Name<br>
+                        <strong>Current State:</strong> @Model.CurrentState?.Name<br>
+                        @if (!string.IsNullOrEmpty(Model.CurrentState?.Description))
+                        {
+                            <small class="text-muted">@Model.CurrentState.Description</small>
+                        }
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(Model.ReviewedBy))
+                    {
+                        <div class="mb-3">
+                            <strong>Reviewed by:</strong> @Model.ReviewedBy<br>
+                            <strong>Reviewed on:</strong> @Model.ReviewedAt?.ToString("MMMM dd, yyyy HH:mm")<br>
+                            @if (!string.IsNullOrEmpty(Model.ReviewComments))
+                            {
+                                <small class="text-muted">Comments: @Model.ReviewComments</small>
+                            }
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(Model.ApprovedBy))
+                    {
+                        <div class="mb-3">
+                            <strong>Approved by:</strong> @Model.ApprovedBy<br>
+                            <strong>Approved on:</strong> @Model.ApprovedAt?.ToString("MMMM dd, yyyy HH:mm")<br>
+                            @if (!string.IsNullOrEmpty(Model.ApprovalComments))
+                            {
+                                <small class="text-muted">Comments: @Model.ApprovalComments</small>
+                            }
+                        </div>
+                    }
+
+                    @if (Model.IsPublished() && Model.Published.HasValue)
+                    {
+                        <div class="alert alert-success">
+                            <i class="fas fa-globe"></i> 
+                            <strong>Published</strong><br>
+                            <small>@Model.Published.Value.ToString("MMMM dd, yyyy HH:mm")</small>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <div class="card mt-4">
+                <div class="card-body text-center">
+                    <a href="@Url.Action("Workflow")" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Workflow
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .article-content {
+        line-height: 1.8;
+        font-size: 1.1rem;
+    }
+
+    .timeline {
+        position: relative;
+        padding-left: 30px;
+    }
+
+    .timeline-item {
+        position: relative;
+        padding-bottom: 20px;
+    }
+
+    .timeline-item:not(:last-child):before {
+        content: '';
+        position: absolute;
+        left: -21px;
+        top: 20px;
+        height: calc(100% - 10px);
+        width: 2px;
+        background-color: #dee2e6;
+    }
+
+    .timeline-marker {
+        position: absolute;
+        left: -27px;
+        top: 5px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background-color: #007bff;
+        border: 2px solid #fff;
+        box-shadow: 0 0 0 2px #dee2e6;
+    }
+
+    .timeline-content {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 4px solid #007bff;
+    }
+</style>
+
+<script>
+    function confirmTransition(transitionName, requiresComment) {
+        if (requiresComment) {
+            return confirm(`Are you sure you want to execute "${transitionName}"? Please ensure you have provided appropriate comments.`);
+        }
+        return confirm(`Are you sure you want to execute "${transitionName}"?`);
+    }
+
+    function toggleComments(transitionId) {
+        const commentsDiv = document.getElementById('comments-' + transitionId);
+        if (commentsDiv.style.display === 'none') {
+            commentsDiv.style.display = 'block';
+            commentsDiv.querySelector('textarea').focus();
+        } else {
+            commentsDiv.style.display = 'none';
+        }
+    }
+</script>

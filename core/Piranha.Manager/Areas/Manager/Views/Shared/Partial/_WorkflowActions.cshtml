@@ -1,23 +1,11 @@
 @model Piranha.Manager.Models.WorkflowModel
-@inject Piranha.Manager.Services.WorkflowService WorkflowService
 
 <div class="workflow-actions">
-    <h5 class="mb-3">Workflow Status: <span class="workflow-status-@Model.CurrentState">@GetStateDisplayName(Model.CurrentState)</span></h5>
-
-    @if (Model.AvailableTransitions.Count > 0)
-    {
-        <div class="btn-group" role="group">
-            @foreach (var transition in Model.AvailableTransitions)
-            {
-                <button type="button" class="btn @transition.CssClass" data-toggle="modal" data-target="#workflowModal" 
-                       data-state="@transition.ToState">@transition.Name</button>
-            }
-        </div>
-    }
-    else
-    {
-        <p>No available workflow actions at this time.</p>
-    }
+    <h5 class="mb-3">Dynamic Workflow Status: <span class="workflow-status">Role-Based Workflow</span></h5>
+    
+    <div id="dynamic-workflow-actions">
+        <p class="text-info">Role-based workflow actions will be loaded dynamically based on user permissions.</p>
+    </div>
 </div>
 
 <!-- Workflow Modal -->

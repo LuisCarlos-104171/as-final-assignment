@@ -68,6 +68,13 @@ public class WorkflowDefinitionEditModel
     public List<WorkflowTransitionEditModel> Transitions { get; set; } = new List<WorkflowTransitionEditModel>();
 
     /// <summary>
+    /// Gets/sets the list of roles in this workflow.
+    /// Note: This is now managed through ASP.NET Core Identity system roles.
+    /// </summary>
+    [Obsolete("Workflow roles are now managed through ASP.NET Core Identity system. Use system roles instead.")]
+    public List<WorkflowRoleEditModel> Roles { get; set; } = new List<WorkflowRoleEditModel>();
+
+    /// <summary>
     /// Gets/sets the available content type options.
     /// </summary>
     public List<ContentTypeOption> AvailableContentTypes { get; set; } = new List<ContentTypeOption>();

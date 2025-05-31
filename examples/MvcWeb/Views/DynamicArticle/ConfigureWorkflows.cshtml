@@ -1,0 +1,354 @@
+@model MvcWeb.Models.WorkflowConfigurationModel
+@{
+    ViewData["Title"] = "Configure Workflows";
+}
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1><i class="fas fa-cog"></i> Workflow Configuration</h1>
+                <a href="@Url.Action("Workflow")" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Workflow
+                </a>
+            </div>
+
+            @if (TempData["SuccessMessage"] != null)
+            {
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    @TempData["SuccessMessage"]
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            }
+
+            @if (TempData["ErrorMessage"] != null)
+            {
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    @TempData["ErrorMessage"]
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            }
+
+            <!-- Create New Workflow -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-plus"></i> Create New Workflow</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" action="@Url.Action("CreateWorkflow")">
+                        @Html.AntiForgeryToken()
+                        <div class="row">
+                            <div class="col-md-8">
+                                <input type="text" name="workflowName" class="form-control" 
+                                       placeholder="Enter workflow name..." required>
+                            </div>
+                            <div class="col-md-4">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-plus"></i> Create Workflow
+                                </button>
+                            </div>
+                        </div>
+                        <small class="form-text text-muted">
+                            This will create a default workflow with standard states: Draft → In Review → Approved → Published
+                        </small>
+                    </form>
+                </div>
+            </div>
+
+            @if (Model.AvailableWorkflows.Any())
+            {
+                <!-- Existing Workflows -->
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6><i class="fas fa-list"></i> Available Workflows</h6>
+                            </div>
+                            <div class="list-group list-group-flush">
+                                @foreach (var workflow in Model.AvailableWorkflows)
+                                {
+                                    <a href="#" class="list-group-item list-group-item-action @(workflow.Id == Model.SelectedWorkflow?.Id ? "active" : "")"
+                                       onclick="selectWorkflow('@workflow.Id')">
+                                        <div class="d-flex w-100 justify-content-between">
+                                            <h6 class="mb-1">@workflow.Name</h6>
+                                            <span class="badge bg-@(workflow.IsDefault ? "primary" : "secondary")">
+                                                @(workflow.IsDefault ? "Default" : "Custom")
+                                            </span>
+                                        </div>
+                                        <p class="mb-1 text-muted">@workflow.Description</p>
+                                        <small>
+                                            Content Types: @workflow.ContentTypes<br>
+                                            States: @workflow.States.Count | Transitions: @workflow.Transitions.Count
+                                        </small>
+                                    </a>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (Model.SelectedWorkflow != null)
+                    {
+                        <div class="col-md-8">
+                            <!-- Workflow Details -->
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <h6><i class="fas fa-info"></i> @Model.SelectedWorkflow.Name</h6>
+                                        <div>
+                                            <span class="badge bg-@(Model.SelectedWorkflow.IsActive ? "success" : "danger")">
+                                                @(Model.SelectedWorkflow.IsActive ? "Active" : "Inactive")
+                                            </span>
+                                            @if (Model.SelectedWorkflow.IsDefault)
+                                            {
+                                                <span class="badge bg-primary">Default</span>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <strong>Description:</strong> @Model.SelectedWorkflow.Description<br>
+                                            <strong>Content Types:</strong> @Model.SelectedWorkflow.ContentTypes<br>
+                                            <strong>Initial State:</strong> @Model.SelectedWorkflow.InitialState
+                                        </div>
+                                        <div class="col-md-6">
+                                            <strong>Created:</strong> @Model.SelectedWorkflow.Created.ToString("MMMM dd, yyyy")<br>
+                                            <strong>Last Modified:</strong> @Model.SelectedWorkflow.LastModified.ToString("MMMM dd, yyyy")<br>
+                                            <strong>States:</strong> @Model.SelectedWorkflow.States.Count
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Workflow States -->
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h6><i class="fas fa-circle"></i> Workflow States</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        @foreach (var state in Model.SelectedWorkflow.States.OrderBy(s => s.SortOrder))
+                                        {
+                                            <div class="col-md-6 col-lg-4 mb-3">
+                                                <div class="card border-start border-4" style="border-color: @state.Color !important;">
+                                                    <div class="card-body p-3">
+                                                        <div class="d-flex justify-content-between align-items-start">
+                                                            <div>
+                                                                <h6 class="mb-1">
+                                                                    <i class="@state.Icon" style="color: @state.Color;"></i>
+                                                                    @state.Name
+                                                                </h6>
+                                                                @if (!string.IsNullOrEmpty(state.Description))
+                                                                {
+                                                                    <p class="mb-2 text-muted small">@state.Description</p>
+                                                                }
+                                                            </div>
+                                                            <div class="text-end">
+                                                                @if (state.IsInitial)
+                                                                {
+                                                                    <span class="badge bg-info mb-1">Initial</span><br>
+                                                                }
+                                                                @if (state.IsPublished)
+                                                                {
+                                                                    <span class="badge bg-success mb-1">Published</span><br>
+                                                                }
+                                                                @if (state.IsFinal)
+                                                                {
+                                                                    <span class="badge bg-warning mb-1">Final</span>
+                                                                }
+                                                            </div>
+                                                        </div>
+                                                        <small class="text-muted">Order: @state.SortOrder</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Workflow Roles -->
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h6><i class="fas fa-users"></i> Workflow Roles</h6>
+                                </div>
+                                <div class="card-body">
+                                    @if (Model.WorkflowRoles.Any())
+                                    {
+                                        <div class="table-responsive">
+                                            <table class="table table-sm">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Role</th>
+                                                        <th>Priority</th>
+                                                        <th>Permissions</th>
+                                                        <th>View Access</th>
+                                                        <th>Allowed States</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var role in Model.WorkflowRoles.OrderByDescending(r => r.Priority))
+                                                    {
+                                                        <tr>
+                                                            <td>
+                                                                <strong>@role.DisplayName</strong><br>
+                                                                <small class="text-muted">@role.RoleKey</small>
+                                                            </td>
+                                                            <td>
+                                                                <span class="badge bg-primary">@role.Priority</span>
+                                                            </td>
+                                                            <td>
+                                                                @if (role.CanCreate) { <span class="badge bg-success me-1">Create</span> }
+                                                                @if (role.CanEdit) { <span class="badge bg-info me-1">Edit</span> }
+                                                                @if (role.CanDelete) { <span class="badge bg-danger me-1">Delete</span> }
+                                                            </td>
+                                                            <td>
+                                                                <span class="badge bg-@(role.CanViewAll ? "success" : "warning")">
+                                                                    @(role.CanViewAll ? "All Content" : "Own Content")
+                                                                </span>
+                                                            </td>
+                                                            <td>
+                                                                <small class="text-muted">
+                                                                    From: @(string.IsNullOrEmpty(role.AllowedFromStates) ? "Any" : role.AllowedFromStates)<br>
+                                                                    To: @(string.IsNullOrEmpty(role.AllowedToStates) ? "Any" : role.AllowedToStates)
+                                                                </small>
+                                                            </td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="text-center text-muted">
+                                            <p>No roles configured for this workflow.</p>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- Workflow Transitions -->
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6><i class="fas fa-arrows-alt"></i> Workflow Transitions</h6>
+                                </div>
+                                <div class="card-body">
+                                    @if (Model.TransitionsByState.Any())
+                                    {
+                                        @foreach (var stateGroup in Model.TransitionsByState)
+                                        {
+                                            var fromState = Model.SelectedWorkflow.States.FirstOrDefault(s => s.Key == stateGroup.Key);
+                                            
+                                            <div class="mb-4">
+                                                <h6 class="border-bottom pb-2">
+                                                    <i class="@fromState?.Icon" style="color: @fromState?.Color;"></i>
+                                                    From: @fromState?.Name (@stateGroup.Key)
+                                                </h6>
+                                                <div class="row">
+                                                    @foreach (var transition in stateGroup.Value.OrderBy(t => t.SortOrder))
+                                                    {
+                                                        var toState = Model.SelectedWorkflow.States.FirstOrDefault(s => s.Key == transition.ToStateKey);
+                                                        
+                                                        <div class="col-md-6 col-lg-4 mb-3">
+                                                            <div class="card border">
+                                                                <div class="card-body p-3">
+                                                                    <h6 class="mb-2">
+                                                                        <i class="@transition.Icon"></i> @transition.Name
+                                                                    </h6>
+                                                                    <p class="mb-2">
+                                                                        <i class="fas fa-arrow-right text-muted"></i>
+                                                                        <strong>@toState?.Name</strong>
+                                                                    </p>
+                                                                    @if (!string.IsNullOrEmpty(transition.Description))
+                                                                    {
+                                                                        <p class="text-muted small mb-2">@transition.Description</p>
+                                                                    }
+                                                                    <div class="d-flex justify-content-between align-items-center">
+                                                                        <small class="text-muted">Order: @transition.SortOrder</small>
+                                                                        <div>
+                                                                            @if (transition.RequiresComment)
+                                                                            {
+                                                                                <span class="badge bg-warning" title="Requires Comment">
+                                                                                    <i class="fas fa-comment"></i>
+                                                                                </span>
+                                                                            }
+                                                                            @if (transition.SendNotification)
+                                                                            {
+                                                                                <span class="badge bg-info" title="Sends Notification">
+                                                                                    <i class="fas fa-bell"></i>
+                                                                                </span>
+                                                                            }
+                                                                        </div>
+                                                                    </div>
+                                                                    @if (transition.RolePermissions.Any())
+                                                                    {
+                                                                        <hr class="my-2">
+                                                                        <small class="text-muted">
+                                                                            <strong>Allowed Roles:</strong>
+                                                                            @foreach (var permission in transition.RolePermissions.Where(rp => rp.CanExecute))
+                                                                            {
+                                                                                var role = Model.WorkflowRoles.FirstOrDefault(r => r.Id == permission.WorkflowRoleId);
+                                                                                <span class="badge bg-secondary me-1">@role?.DisplayName</span>
+                                                                            }
+                                                                        </small>
+                                                                    }
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <div class="text-center text-muted">
+                                            <p>No transitions configured for this workflow.</p>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-info">
+                    <h5><i class="fas fa-info-circle"></i> No Workflows Found</h5>
+                    <p>There are no workflows configured yet. Create your first workflow to get started.</p>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<script>
+    function selectWorkflow(workflowId) {
+        // In a real implementation, this would reload the page with the selected workflow
+        // For now, we'll just show a message
+        console.log('Selected workflow:', workflowId);
+        // window.location.href = '@Url.Action("ConfigureWorkflows")?workflowId=' + workflowId;
+    }
+</script>
+
+<style>
+    .list-group-item.active {
+        background-color: #0d6efd;
+        border-color: #0d6efd;
+    }
+
+    .card.border-start {
+        border-left-width: 4px !important;
+    }
+
+    .table-responsive {
+        border-radius: 0.375rem;
+    }
+
+    .badge {
+        font-size: 0.75em;
+    }
+</style>

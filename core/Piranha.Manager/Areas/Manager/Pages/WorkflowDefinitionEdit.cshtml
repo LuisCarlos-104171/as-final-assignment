@@ -144,6 +144,20 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Role Information Card -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h5 class="card-title"><i class="fas fa-info-circle"></i> @Localizer.General["Role Information"]</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-info">
+                                <h6><i class="fas fa-lightbulb"></i> @Localizer.General["System Roles"]</h6>
+                                <p>@Localizer.General["Workflow transitions use roles from the ASP.NET Core Identity system. Roles must be created and managed through the Identity system before they can be assigned to workflow transitions."]</p>
+                                <p><strong>@Localizer.General["Available System Roles"]:</strong> SysAdmin, Writer, Editor, Reviewer</p>
+                            </div>
+                        </div>
+                    </div>
                 </form>
             </div>
         </div>
@@ -157,7 +171,8 @@
             <div class="col-md-3">
                 <div class="form-group">
                     <label>@Localizer.General["Key"] *</label>
-                    <input type="text" class="form-control state-key" name="States[].Key" required>
+                    <input type="text" class="form-control state-key" name="States[].Key" required pattern="^[a-z0-9_]+$" title="Only lowercase letters, numbers, and underscores allowed">
+                    <small class="form-text text-muted">Lowercase letters, numbers, and underscores only</small>
                 </div>
             </div>
             <div class="col-md-3">
@@ -258,13 +273,13 @@
             </div>
             <div class="col-md-3">
                 <div class="form-group">
-                    <label>@Localizer.General["Permission"]</label>
-                    <select class="form-control transition-permission" name="Transitions[].RequiredPermission">
-                        <option value="">@Localizer.General["No permission required"]</option>
-                        <option value="PiranhaContentSubmitForReview">Submit for Review</option>
-                        <option value="PiranhaContentApprove">Approve Content</option>
-                        <option value="PiranhaContentReject">Reject Content</option>
-                        <option value="PiranhaContentPublish">Publish Content</option>
+                    <label>@Localizer.General["Required Role"]</label>
+                    <select class="form-control transition-role" name="Transitions[].RequiredRole">
+                        <option value="">@Localizer.General["No role required"]</option>
+                        <option value="SysAdmin">System Administrator</option>
+                        <option value="Writer">Writer</option>
+                        <option value="Editor">Editor</option>
+                        <option value="Reviewer">Reviewer</option>
                     </select>
                 </div>
             </div>
@@ -331,6 +346,7 @@
         <input type="hidden" class="transition-sort-order" name="Transitions[].SortOrder">
     </div>
 </template>
+
 
 
 @section script {
@@ -415,7 +431,7 @@
                 });
             }
             
-            // Update all state selectors after all states and transitions are loaded
+            // Update all selectors after all states and transitions are loaded
             this.isLoading = false;
             this.updateStateSelectors();
             this.updateInitialStateOptions();
@@ -466,10 +482,10 @@
                 // Store the data to be applied after state selectors are updated
                 container.setAttribute('data-from-state', transitionData.fromStateKey || '');
                 container.setAttribute('data-to-state', transitionData.toStateKey || '');
+                container.setAttribute('data-required-role', transitionData.requiredRole || '');
                 
                 container.querySelector('.transition-name').value = transitionData.name || '';
                 container.querySelector('.transition-description').value = transitionData.description || '';
-                container.querySelector('.transition-permission').value = transitionData.requiredPermission || '';
                 container.querySelector('.transition-css').value = transitionData.cssClass || 'btn-primary';
                 container.querySelector('.transition-icon').value = transitionData.icon || 'fas fa-arrow-right';
                 container.querySelector('.transition-requires-comment').checked = transitionData.requiresComment || false;
@@ -483,11 +499,12 @@
             $('#transitions-container').append(container);
             this.transitionIndex++;
             
-            // Only update state selectors if we're not in the middle of loading data
+            // Only update selectors if we're not in the middle of loading data
             if (!this.isLoading) {
                 this.updateStateSelectors();
             }
         },
+        
         
         removeState: function(button) {
             $(button).closest('.state-item').remove();
@@ -549,7 +566,25 @@
                     }
                 }
             });
+            
+            // Handle role selectors similar to state selectors
+            $('.transition-role').each(function() {
+                var $select = $(this);
+                var $container = $select.closest('.transition-item');
+                var currentValue = $select.val();
+                var storedValue = $container.attr('data-required-role') || '';
+                
+                // Use stored value if current value is empty (during initial load)
+                var valueToSet = currentValue || storedValue;
+                $select.val(valueToSet);
+                
+                // Clear stored data after using it
+                if (storedValue) {
+                    $container.removeAttr('data-required-role');
+                }
+            });
         },
+        
         
         updateInitialStateOptions: function() {
             var states = [];
@@ -650,7 +685,7 @@
                     toStateKey: $(this).find('.transition-to').val(),
                     name: $(this).find('.transition-name').val(),
                     description: $(this).find('.transition-description').val(),
-                    requiredPermission: $(this).find('.transition-permission').val(),
+                    requiredRole: $(this).find('.transition-role').val(),
                     cssClass: $(this).find('.transition-css').val(),
                     icon: $(this).find('.transition-icon').val(),
                     requiresComment: $(this).find('.transition-requires-comment').is(':checked'),
@@ -680,6 +715,18 @@
                 workflowEdit.updateStateSelectors();
                 workflowEdit.updateInitialStateOptions();
             });
+            
+            // Auto-format state keys to be valid (lowercase, numbers, underscores only)
+            $(document).on('input', '.state-key', function() {
+                var $this = $(this);
+                var value = $this.val();
+                var formatted = value.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                if (value !== formatted) {
+                    $this.val(formatted);
+                    workflowEdit.updateStateSelectors();
+                    workflowEdit.updateInitialStateOptions();
+                }
+            });
         });
     } else {
         console.error('jQuery is not loaded');
@@ -693,6 +740,18 @@
                     $(document).on('input', '.state-key, .state-name', function() {
                         workflowEdit.updateStateSelectors();
                         workflowEdit.updateInitialStateOptions();
+                    });
+                    
+                    // Auto-format state keys to be valid (lowercase, numbers, underscores only)
+                    $(document).on('input', '.state-key', function() {
+                        var $this = $(this);
+                        var value = $this.val();
+                        var formatted = value.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                        if (value !== formatted) {
+                            $this.val(formatted);
+                            workflowEdit.updateStateSelectors();
+                            workflowEdit.updateInitialStateOptions();
+                        }
                     });
                 });
             }

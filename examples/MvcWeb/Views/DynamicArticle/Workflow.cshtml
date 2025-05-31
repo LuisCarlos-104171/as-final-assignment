@@ -1,0 +1,207 @@
+@model List<MvcWeb.Models.DynamicArticleSubmissionModel>
+@{
+    ViewData["Title"] = "Dynamic Article Workflow";
+    var groupedArticles = ViewBag.GroupedArticles as Dictionary<string, List<MvcWeb.Models.DynamicArticleSubmissionModel>>;
+    var userRoles = ViewBag.UserRoles as IEnumerable<string>;
+    var workflows = ViewBag.Workflows as IEnumerable<Piranha.Models.WorkflowDefinition>;
+}
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Article Workflow Dashboard</h1>
+                <div>
+                    <span class="badge bg-info me-2">Total Articles: @Model.Count</span>
+                    @if (userRoles.Contains("SysAdmin"))
+                    {
+                        <a href="@Url.Action("ConfigureWorkflows")" class="btn btn-secondary">
+                            <i class="fas fa-cog"></i> Configure Workflows
+                        </a>
+                    }
+                </div>
+            </div>
+
+            @if (TempData["SuccessMessage"] != null)
+            {
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    @TempData["SuccessMessage"]
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            }
+
+            @if (TempData["ErrorMessage"] != null)
+            {
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    @TempData["ErrorMessage"]
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            }
+
+            @if (!Model.Any())
+            {
+                <div class="alert alert-info">
+                    <h5><i class="fas fa-info-circle"></i> No Articles Found</h5>
+                    <p>There are no articles in the workflow system yet.</p>
+                    <a href="@Url.Action("Submit")" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Submit New Article
+                    </a>
+                </div>
+            }
+            else
+            {
+                <!-- Workflow State Columns -->
+                <div class="row">
+                    @foreach (var workflow in workflows)
+                    {
+                        @foreach (var state in workflow.States.OrderBy(s => s.SortOrder))
+                        {
+                            var articlesInState = groupedArticles.ContainsKey(state.Key) ? groupedArticles[state.Key] : new List<MvcWeb.Models.DynamicArticleSubmissionModel>();
+                            
+                            <div class="col-lg-3 col-md-4 col-sm-6 mb-4">
+                                <div class="card h-100">
+                                    <div class="card-header" style="background-color: @state.Color; color: white;">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <h6 class="mb-0">
+                                                <i class="@state.Icon"></i> @state.Name
+                                            </h6>
+                                            <span class="badge bg-light text-dark">@articlesInState.Count</span>
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(state.Description))
+                                        {
+                                            <small class="text-white-50">@state.Description</small>
+                                        }
+                                    </div>
+                                    <div class="card-body p-0">
+                                        @if (articlesInState.Any())
+                                        {
+                                            <div class="list-group list-group-flush">
+                                                @foreach (var article in articlesInState.Take(5))
+                                                {
+                                                    <a href="@Url.Action("Review", new { id = article.Id })" 
+                                                       class="list-group-item list-group-item-action">
+                                                        <div class="d-flex w-100 justify-content-between">
+                                                            <h6 class="mb-1 text-truncate">@article.Title</h6>
+                                                            <small>@article.Created.ToString("MM/dd")</small>
+                                                        </div>
+                                                        <p class="mb-1 text-muted small">by @article.Author</p>
+                                                        @if (article.AvailableTransitions.Any())
+                                                        {
+                                                            <small class="text-success">
+                                                                <i class="fas fa-arrow-right"></i> 
+                                                                @article.AvailableTransitions.Count action(s) available
+                                                            </small>
+                                                        }
+                                                    </a>
+                                                }
+                                                @if (articlesInState.Count > 5)
+                                                {
+                                                    <div class="list-group-item text-center text-muted">
+                                                        <small>... and @(articlesInState.Count - 5) more</small>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="p-3 text-center text-muted">
+                                                <i class="fas fa-inbox fa-2x"></i>
+                                                <p class="mt-2 mb-0">No articles</p>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+
+                <!-- Recent Activity -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-clock"></i> Recent Articles</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Title</th>
+                                                <th>Author</th>
+                                                <th>Current State</th>
+                                                <th>Created</th>
+                                                <th>Last Modified</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var article in Model.Take(10))
+                                            {
+                                                <tr>
+                                                    <td>
+                                                        <a href="@Url.Action("Review", new { id = article.Id })" class="text-decoration-none">
+                                                            @article.Title
+                                                        </a>
+                                                    </td>
+                                                    <td>@article.Author</td>
+                                                    <td>
+                                                        <span class="badge @article.GetStateBadgeClass()">
+                                                            <i class="@article.GetStateIcon()"></i> @article.CurrentState?.Name
+                                                        </span>
+                                                    </td>
+                                                    <td>@article.Created.ToString("MM/dd/yyyy HH:mm")</td>
+                                                    <td>
+                                                        @if (article.LastModified.HasValue)
+                                                        {
+                                                            @article.LastModified.Value.ToString("MM/dd/yyyy HH:mm")
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="text-muted">—</span>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        <a href="@Url.Action("Review", new { id = article.Id })" 
+                                                           class="btn btn-sm btn-outline-primary">
+                                                            <i class="fas fa-eye"></i> Review
+                                                        </a>
+                                                        @if (article.AvailableTransitions.Any())
+                                                        {
+                                                            <span class="badge bg-success ms-1">
+                                                                @article.AvailableTransitions.Count
+                                                            </span>
+                                                        }
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .card-header {
+        border-bottom: 2px solid rgba(255,255,255,0.2);
+    }
+    
+    .list-group-item:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .badge {
+        font-size: 0.75em;
+    }
+    
+    .text-truncate {
+        max-width: 200px;
+    }
+</style>

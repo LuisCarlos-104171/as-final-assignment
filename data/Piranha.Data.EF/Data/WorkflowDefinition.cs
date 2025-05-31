@@ -79,4 +79,9 @@ public class WorkflowDefinition
     /// Gets/sets the list of transitions in this workflow.
     /// </summary>
     public ICollection<WorkflowTransition> Transitions { get; set; } = new List<WorkflowTransition>();
+
+    /// <summary>
+    /// Gets/sets the list of roles in this workflow.
+    /// </summary>
+    public ICollection<WorkflowRole> Roles { get; set; } = new List<WorkflowRole>();
 }

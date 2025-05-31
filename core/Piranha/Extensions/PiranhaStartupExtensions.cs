@@ -27,6 +27,7 @@ public static class PiranhaStartupExtensions
         services.AddScoped<IApi, Api>();
         services.AddScoped<Config>();
         services.AddScoped<IWorkflowDefinitionService, WorkflowDefinitionService>();
+        services.AddScoped<IDynamicWorkflowService, DynamicWorkflowService>();
 
         return services;
     }

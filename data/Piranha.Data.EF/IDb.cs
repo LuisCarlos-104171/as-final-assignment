@@ -228,6 +228,16 @@ public interface IDb : IDisposable
     DbSet<Data.WorkflowTransition> WorkflowTransitions { get; set; }
 
     /// <summary>
+    /// Gets/sets the workflow role set.
+    /// </summary>
+    DbSet<Data.WorkflowRole> WorkflowRoles { get; set; }
+
+    /// <summary>
+    /// Gets/sets the workflow role permission set.
+    /// </summary>
+    DbSet<Data.WorkflowRolePermission> WorkflowRolePermissions { get; set; }
+
+    /// <summary>
     /// Gets the entity set for the specified type.
     /// </summary>
     DbSet<T> Set<T>() where T : class;

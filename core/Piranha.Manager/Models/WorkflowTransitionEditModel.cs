@@ -54,8 +54,15 @@ public class WorkflowTransitionEditModel
 
     /// <summary>
     /// Gets/sets the required permission.
+    /// Note: This is deprecated. Use RequiredRole instead for role-based workflow permissions.
     /// </summary>
+    [Obsolete("Use RequiredRole instead. This field is maintained for backward compatibility only.")]
     public string RequiredPermission { get; set; }
+
+    /// <summary>
+    /// Gets/sets the required role for this transition.
+    /// </summary>
+    public string RequiredRole { get; set; }
 
     /// <summary>
     /// Gets/sets the CSS class for the transition button.

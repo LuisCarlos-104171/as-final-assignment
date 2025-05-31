@@ -101,4 +101,49 @@ public interface IWorkflowRepository
     /// </summary>
     /// <param name="id">The transition id</param>
     Task DeleteTransitionAsync(Guid id);
+
+    /// <summary>
+    /// Gets a workflow transition by its id.
+    /// </summary>
+    /// <param name="id">The transition id</param>
+    /// <returns>The workflow transition</returns>
+    Task<WorkflowTransition> GetTransitionByIdAsync(Guid id);
+
+    /// <summary>
+    /// Gets all workflow roles for the given workflow definition.
+    /// </summary>
+    /// <param name="workflowId">The workflow definition id</param>
+    /// <returns>The workflow roles</returns>
+    Task<IEnumerable<WorkflowRole>> GetRolesAsync(Guid workflowId);
+
+    /// <summary>
+    /// Saves a workflow role.
+    /// </summary>
+    /// <param name="role">The workflow role</param>
+    Task SaveRoleAsync(WorkflowRole role);
+
+    /// <summary>
+    /// Deletes a workflow role.
+    /// </summary>
+    /// <param name="id">The role id</param>
+    Task DeleteRoleAsync(Guid id);
+
+    /// <summary>
+    /// Gets workflow role permissions for a specific transition.
+    /// </summary>
+    /// <param name="transitionId">The transition id</param>
+    /// <returns>The role permissions</returns>
+    Task<IEnumerable<WorkflowRolePermission>> GetRolePermissionsAsync(Guid transitionId);
+
+    /// <summary>
+    /// Saves a workflow role permission.
+    /// </summary>
+    /// <param name="permission">The role permission</param>
+    Task SaveRolePermissionAsync(WorkflowRolePermission permission);
+
+    /// <summary>
+    /// Deletes a workflow role permission.
+    /// </summary>
+    /// <param name="id">The permission id</param>
+    Task DeleteRolePermissionAsync(Guid id);
 }

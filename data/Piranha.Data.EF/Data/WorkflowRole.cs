@@ -13,10 +13,10 @@ using System.ComponentModel.DataAnnotations;
 namespace Piranha.Data;
 
 /// <summary>
-/// Entity Framework model for workflow transitions.
+/// Entity Framework model for workflow roles.
 /// </summary>
 [Serializable]
-public class WorkflowTransition
+public class WorkflowRole
 {
     /// <summary>
     /// Gets/sets the unique id.
@@ -29,70 +29,61 @@ public class WorkflowTransition
     public Guid WorkflowDefinitionId { get; set; }
 
     /// <summary>
-    /// Gets/sets the from state key.
+    /// Gets/sets the role key that maps to application roles.
     /// </summary>
     [Required]
     [StringLength(64)]
-    public string FromStateKey { get; set; }
+    public string RoleKey { get; set; }
 
     /// <summary>
-    /// Gets/sets the to state key.
-    /// </summary>
-    [Required]
-    [StringLength(64)]
-    public string ToStateKey { get; set; }
-
-    /// <summary>
-    /// Gets/sets the transition name.
+    /// Gets/sets the display name for the role.
     /// </summary>
     [Required]
     [StringLength(128)]
-    public string Name { get; set; }
+    public string DisplayName { get; set; }
 
     /// <summary>
-    /// Gets/sets the transition description.
+    /// Gets/sets the role description.
     /// </summary>
     [StringLength(512)]
     public string Description { get; set; }
 
     /// <summary>
-    /// Gets/sets the required permission.
+    /// Gets/sets the role priority for inheritance.
     /// </summary>
-    [StringLength(128)]
-    public string RequiredPermission { get; set; }
+    public int Priority { get; set; }
 
     /// <summary>
-    /// Gets/sets the CSS class for the transition button.
+    /// Gets/sets if the role can create content.
     /// </summary>
-    [StringLength(64)]
-    public string CssClass { get; set; } = "btn-primary";
+    public bool CanCreate { get; set; }
 
     /// <summary>
-    /// Gets/sets the icon for the transition button.
+    /// Gets/sets if the role can edit content.
     /// </summary>
-    [StringLength(64)]
-    public string Icon { get; set; } = "fas fa-arrow-right";
+    public bool CanEdit { get; set; }
 
     /// <summary>
-    /// Gets/sets the sort order.
+    /// Gets/sets if the role can delete content.
     /// </summary>
-    public int SortOrder { get; set; }
+    public bool CanDelete { get; set; }
 
     /// <summary>
-    /// Gets/sets if comments are required for this transition.
+    /// Gets/sets if the role can view all content.
     /// </summary>
-    public bool RequiresComment { get; set; }
+    public bool CanViewAll { get; set; }
 
     /// <summary>
-    /// Gets/sets if this transition should send notifications.
+    /// Gets/sets the comma-separated list of states this role can transition from.
     /// </summary>
-    public bool SendNotification { get; set; } = true;
+    [StringLength(256)]
+    public string AllowedFromStates { get; set; }
 
     /// <summary>
-    /// Gets/sets the notification template.
+    /// Gets/sets the comma-separated list of states this role can transition to.
     /// </summary>
-    [StringLength(1024)]
-    public string NotificationTemplate { get; set; }
+    [StringLength(256)]
+    public string AllowedToStates { get; set; }
 
     /// <summary>
     /// Gets/sets the workflow definition.
@@ -100,7 +91,7 @@ public class WorkflowTransition
     public WorkflowDefinition WorkflowDefinition { get; set; }
 
     /// <summary>
-    /// Gets/sets the role permissions for this transition.
+    /// Gets/sets the role permissions for transitions.
     /// </summary>
     public ICollection<WorkflowRolePermission> RolePermissions { get; set; } = new List<WorkflowRolePermission>();
 }

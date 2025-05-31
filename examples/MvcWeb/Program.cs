@@ -74,6 +74,10 @@ builder.AddPiranha(options =>
     // Register our custom repository
     builder.Services.AddScoped<ArticleSubmissionRepository>();
     
+    // Register dynamic workflow services
+    builder.Services.AddScoped<DynamicArticleSubmissionRepository>();
+    builder.Services.AddScoped<MvcWeb.Services.DynamicWorkflowTestService>();
+    
     // Register metrics service as singleton
     builder.Services.AddSingleton<MvcWeb.Services.MetricsService>();
     
@@ -141,11 +145,36 @@ app.UsePiranha(options =>
     Seed.RunAsync(options.Api).GetAwaiter().GetResult();
 });
 
-// Ensure database is created
+// Ensure database is created and initialized
 using (var scope = app.Services.CreateScope())
 {
     var articleDbContext = scope.ServiceProvider.GetService<ArticleDbContext>();
-    articleDbContext?.Database.EnsureCreated();
+    if (articleDbContext != null)
+    {
+        // Initialize database with workflow support
+        try
+        {
+            // Ensure the Articles table exists with proper schema
+            ArticleDbMigrator.EnsureArticlesTableAsync(articleDbContext).GetAwaiter().GetResult();
+            Console.WriteLine("Article database initialized successfully.");
+        }
+        catch (Exception ex)
+        {
+            // Log the error but don't crash the application
+            Console.WriteLine($"Warning: Could not initialize article database: {ex.Message}");
+            Console.WriteLine($"Falling back to EnsureCreated: {ex}");
+            
+            // Fallback to EF's EnsureCreated
+            try
+            {
+                articleDbContext.Database.EnsureCreated();
+            }
+            catch (Exception fallbackEx)
+            {
+                Console.WriteLine($"Fallback also failed: {fallbackEx.Message}");
+            }
+        }
+    }
 }
 
 // Map Prometheus metrics endpoint

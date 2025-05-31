@@ -81,6 +81,11 @@ public class WorkflowDefinition
     public IList<WorkflowTransition> Transitions { get; set; } = new List<WorkflowTransition>();
 
     /// <summary>
+    /// Gets/sets the list of roles in this workflow.
+    /// </summary>
+    public IList<WorkflowRole> Roles { get; set; } = new List<WorkflowRole>();
+
+    /// <summary>
     /// Gets the list of content types as an array.
     /// </summary>
     public string[] GetContentTypes()

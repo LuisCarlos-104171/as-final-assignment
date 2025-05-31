@@ -8,6 +8,7 @@
  *
  */
 
+using Microsoft.AspNetCore.Identity;
 using Piranha.Manager.Models;
 using Piranha.Services;
 
@@ -19,6 +20,7 @@ namespace Piranha.Manager.Services;
 public class WorkflowDefinitionManagerService
 {
     private readonly IWorkflowDefinitionService _workflowService;
+    private readonly IDynamicWorkflowService _dynamicWorkflowService;
     private readonly IApi _api;
     private readonly ManagerLocalizer _localizer;
 
@@ -26,11 +28,13 @@ public class WorkflowDefinitionManagerService
     /// Constructor.
     /// </summary>
     /// <param name="workflowService">The workflow definition service</param>
+    /// <param name="dynamicWorkflowService">The dynamic workflow service</param>
     /// <param name="api">The current API</param>
     /// <param name="localizer">The localizer</param>
-    public WorkflowDefinitionManagerService(IWorkflowDefinitionService workflowService, IApi api, ManagerLocalizer localizer)
+    public WorkflowDefinitionManagerService(IWorkflowDefinitionService workflowService, IDynamicWorkflowService dynamicWorkflowService, IApi api, ManagerLocalizer localizer)
     {
         _workflowService = workflowService;
+        _dynamicWorkflowService = dynamicWorkflowService;
         _api = api;
         _localizer = localizer;
     }
@@ -118,7 +122,7 @@ public class WorkflowDefinitionManagerService
                         ToStateKey = transition.ToStateKey,
                         Name = transition.Name,
                         Description = transition.Description,
-                        RequiredPermission = transition.RequiredPermission,
+                        RequiredRole = transition.RequiredPermission, // Map legacy permission field to role
                         CssClass = transition.CssClass,
                         Icon = transition.Icon,
                         SortOrder = transition.SortOrder,
@@ -127,6 +131,9 @@ public class WorkflowDefinitionManagerService
                         NotificationTemplate = transition.NotificationTemplate
                     });
                 }
+
+                // Note: Roles are now managed through ASP.NET Core Identity system
+                // Workflow-specific roles are no longer used
             }
         }
         else
@@ -153,6 +160,9 @@ public class WorkflowDefinitionManagerService
                 IsPublished = false,
                 IsFinal = false
             });
+
+            // Note: Roles are now managed through ASP.NET Core Identity system
+            // No default workflow-specific roles are created
         }
 
         // Set available options
@@ -226,7 +236,7 @@ public class WorkflowDefinitionManagerService
                     ToStateKey = transitionModel.ToStateKey,
                     Name = transitionModel.Name,
                     Description = transitionModel.Description,
-                    RequiredPermission = transitionModel.RequiredPermission,
+                    RequiredPermission = transitionModel.RequiredRole, // Map role back to legacy permission field
                     CssClass = transitionModel.CssClass,
                     Icon = transitionModel.Icon,
                     SortOrder = transitionModel.SortOrder,
@@ -235,6 +245,9 @@ public class WorkflowDefinitionManagerService
                     NotificationTemplate = transitionModel.NotificationTemplate
                 });
             }
+
+            // Note: Roles are now managed through ASP.NET Core Identity system
+            // No workflow-specific roles are saved
 
             await _workflowService.SaveAsync(workflow);
 
@@ -289,7 +302,8 @@ public class WorkflowDefinitionManagerService
     /// <returns>The created workflow id</returns>
     public async Task<Guid> CreateDefaultWorkflowAsync(string name, string[] contentTypes)
     {
-        var workflow = await _workflowService.CreateDefaultWorkflowAsync(name, contentTypes);
+        var contentType = contentTypes.FirstOrDefault() ?? "content";
+        var workflow = await _dynamicWorkflowService.CreateDefaultWorkflowAsync(contentType, name);
         await _workflowService.SaveAsync(workflow);
         return workflow.Id;
     }
@@ -308,21 +322,14 @@ public class WorkflowDefinitionManagerService
             new WorkflowDefinitionEditModel.ContentTypeOption { Value = "content", Text = "Content", Selected = model.ContentTypes.Contains("content") }
         };
 
-        // Set available permissions
+        // Set available system roles (from ASP.NET Core Identity)
         model.AvailablePermissions = new List<WorkflowDefinitionEditModel.PermissionOption>
         {
-            new WorkflowDefinitionEditModel.PermissionOption { Value = "", Text = "No permission required" },
-            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaContentSubmitForReview", Text = "Submit for Review" },
-            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaContentReview", Text = "Review Content" },
-            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaContentApprove", Text = "Approve Content" },
-            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaContentReject", Text = "Reject Content" },
-            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaContentPublish", Text = "Publish Content" },
-            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPagesSubmitForReview", Text = "Submit Pages for Review" },
-            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPagesApprove", Text = "Approve Pages" },
-            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPagesReject", Text = "Reject Pages" },
-            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPostsSubmitForReview", Text = "Submit Posts for Review" },
-            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPostsApprove", Text = "Approve Posts" },
-            new WorkflowDefinitionEditModel.PermissionOption { Value = "PiranhaPostsReject", Text = "Reject Posts" }
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "", Text = "No role required" },
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "SysAdmin", Text = "System Administrator" },
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "Writer", Text = "Writer" },
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "Editor", Text = "Editor" },
+            new WorkflowDefinitionEditModel.PermissionOption { Value = "Reviewer", Text = "Reviewer" }
         };
 
         await Task.CompletedTask;

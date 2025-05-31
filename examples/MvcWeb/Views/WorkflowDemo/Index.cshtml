@@ -1,0 +1,338 @@
+@{
+    ViewData["Title"] = "Dynamic Workflow System Demo";
+}
+
+<div class="container">
+    <div class="row">
+        <div class="col-12">
+            <div class="jumbotron bg-primary text-white p-5 rounded mb-4">
+                <h1 class="display-4"><i class="fas fa-magic"></i> Dynamic Workflow System</h1>
+                <p class="lead">
+                    This demonstration shows how the Piranha CMS workflow system has been transformed from 
+                    tightly-coupled, hardcoded role checks to a flexible, configurable workflow engine.
+                </p>
+                <hr class="my-4 bg-white">
+                <p>
+                    The new system eliminates hardcoded workflow logic and enables dynamic workflow definitions 
+                    that can be configured without code changes.
+                </p>
+                <div class="mt-4">
+                    <button id="runBasicTest" class="btn btn-warning btn-lg me-3">
+                        <i class="fas fa-play"></i> Run Basic Test
+                    </button>
+                    <button id="runCompleteScenario" class="btn btn-success btn-lg me-3">
+                        <i class="fas fa-rocket"></i> Run Complete Scenario
+                    </button>
+                    <a href="@Url.Action("Comparison")" class="btn btn-outline-light btn-lg">
+                        <i class="fas fa-balance-scale"></i> View Comparison
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Results Area -->
+    <div id="testResults" class="row" style="display: none;">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 id="testTitle"><i class="fas fa-cog fa-spin"></i> Running Test...</h5>
+                </div>
+                <div class="card-body">
+                    <div id="testContent">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-3">Please wait while the test runs...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Key Features -->
+    <div class="row mt-5">
+        <div class="col-md-6">
+            <div class="card h-100 border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h5><i class="fas fa-times"></i> Old System Problems</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item">
+                            <i class="fas fa-code text-danger"></i>
+                            <strong>Hardcoded Role Checks</strong><br>
+                            <small class="text-muted">Role logic embedded in controllers (ArticleController:181-207)</small>
+                        </li>
+                        <li class="list-group-item">
+                            <i class="fas fa-lock text-danger"></i>
+                            <strong>Fixed Status Enums</strong><br>
+                            <small class="text-muted">ArticleStatus enum cannot be modified without code changes</small>
+                        </li>
+                        <li class="list-group-item">
+                            <i class="fas fa-cogs text-danger"></i>
+                            <strong>Hardcoded Permissions</strong><br>
+                            <small class="text-muted">Permission strings defined as constants (WorkflowPermissions.cs)</small>
+                        </li>
+                        <li class="list-group-item">
+                            <i class="fas fa-wrench text-danger"></i>
+                            <strong>Inflexible UI</strong><br>
+                            <small class="text-muted">User interface hardcoded for specific workflow states</small>
+                        </li>
+                        <li class="list-group-item">
+                            <i class="fas fa-database text-danger"></i>
+                            <strong>Content Type Coupling</strong><br>
+                            <small class="text-muted">Separate logic required for each content type</small>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card h-100 border-success">
+                <div class="card-header bg-success text-white">
+                    <h5><i class="fas fa-check"></i> New System Benefits</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item">
+                            <i class="fas fa-cog text-success"></i>
+                            <strong>Configurable Workflows</strong><br>
+                            <small class="text-muted">Database-driven workflow definitions with custom states</small>
+                        </li>
+                        <li class="list-group-item">
+                            <i class="fas fa-users text-success"></i>
+                            <strong>Dynamic Role System</strong><br>
+                            <small class="text-muted">Role hierarchy with inheritance and configurable permissions</small>
+                        </li>
+                        <li class="list-group-item">
+                            <i class="fas fa-arrows-alt text-success"></i>
+                            <strong>Flexible Transitions</strong><br>
+                            <small class="text-muted">Custom transitions with conditions and notifications</small>
+                        </li>
+                        <li class="list-group-item">
+                            <i class="fas fa-eye text-success"></i>
+                            <strong>Adaptive UI</strong><br>
+                            <small class="text-muted">Interface automatically adapts to workflow configuration</small>
+                        </li>
+                        <li class="list-group-item">
+                            <i class="fas fa-chart-line text-success"></i>
+                            <strong>Analytics Support</strong><br>
+                            <small class="text-muted">Built-in workflow monitoring and optimization</small>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Architecture Overview -->
+    <div class="row mt-5">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-sitemap"></i> Dynamic Workflow Architecture</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="text-center p-3 border rounded bg-light">
+                                <i class="fas fa-database fa-2x text-primary"></i>
+                                <h6 class="mt-2">Workflow Models</h6>
+                                <small class="text-muted">
+                                    WorkflowDefinition<br>
+                                    WorkflowState<br>
+                                    WorkflowTransition<br>
+                                    WorkflowRole
+                                </small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center p-3 border rounded bg-light">
+                                <i class="fas fa-cogs fa-2x text-info"></i>
+                                <h6 class="mt-2">Workflow Service</h6>
+                                <small class="text-muted">
+                                    IDynamicWorkflowService<br>
+                                    Permission evaluation<br>
+                                    Role hierarchy<br>
+                                    Transition validation
+                                </small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center p-3 border rounded bg-light">
+                                <i class="fas fa-desktop fa-2x text-success"></i>
+                                <h6 class="mt-2">Dynamic UI</h6>
+                                <small class="text-muted">
+                                    Configurable views<br>
+                                    Dynamic transitions<br>
+                                    Role-based filtering<br>
+                                    Adaptive layouts
+                                </small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center p-3 border rounded bg-light">
+                                <i class="fas fa-chart-bar fa-2x text-warning"></i>
+                                <h6 class="mt-2">Analytics</h6>
+                                <small class="text-muted">
+                                    Workflow metrics<br>
+                                    Performance tracking<br>
+                                    Bottleneck detection<br>
+                                    Usage analytics
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Call to Action -->
+    <div class="row mt-5">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <h5><i class="fas fa-lightbulb"></i> Try the Dynamic Workflow System</h5>
+                <p class="mb-3">
+                    Experience the power of configurable workflows by testing the new article submission system:
+                </p>
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="@Url.Action("Submit", "DynamicArticle")" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Submit Article
+                    </a>
+                    <a href="@Url.Action("Workflow", "DynamicArticle")" class="btn btn-secondary">
+                        <i class="fas fa-tasks"></i> View Workflow Dashboard
+                    </a>
+                    <a href="@Url.Action("ConfigureWorkflows", "DynamicArticle")" class="btn btn-warning">
+                        <i class="fas fa-cog"></i> Configure Workflows
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const runBasicTestBtn = document.getElementById('runBasicTest');
+    const runCompleteScenarioBtn = document.getElementById('runCompleteScenario');
+    const testResults = document.getElementById('testResults');
+    const testTitle = document.getElementById('testTitle');
+    const testContent = document.getElementById('testContent');
+
+    function showLoading(title) {
+        testTitle.innerHTML = '<i class="fas fa-cog fa-spin"></i> ' + title;
+        testContent.innerHTML = `
+            <div class="text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-3">Please wait while the test runs...</p>
+            </div>
+        `;
+        testResults.style.display = 'block';
+        testResults.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function showResults(result, title) {
+        testTitle.innerHTML = '<i class="fas fa-' + (result.isSuccess ? 'check text-success' : 'times text-danger') + '"></i> ' + title;
+        
+        let content = `
+            <div class="alert alert-${result.isSuccess ? 'success' : 'danger'}">
+                <h6>${result.summary}</h6>
+            </div>
+            <div class="test-steps">
+                <h6>Test Steps:</h6>
+                <div class="bg-dark text-light p-3 rounded" style="font-family: 'Courier New', monospace; font-size: 0.9em; max-height: 400px; overflow-y: auto;">
+        `;
+        
+        result.steps.forEach(step => {
+            content += step + '\n';
+        });
+        
+        content += `
+                </div>
+            </div>
+        `;
+        
+        testContent.innerHTML = content;
+    }
+
+    runBasicTestBtn.addEventListener('click', function() {
+        showLoading('Running Basic Workflow Test');
+        
+        fetch('@Url.Action("RunBasicTest")')
+            .then(response => response.json())
+            .then(result => {
+                showResults(result, 'Basic Workflow Test Results');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showResults({
+                    isSuccess: false,
+                    summary: 'Test failed due to an error',
+                    steps: ['❌ Error: ' + error.message]
+                }, 'Basic Workflow Test - Error');
+            });
+    });
+
+    runCompleteScenarioBtn.addEventListener('click', function() {
+        showLoading('Running Complete Workflow Scenario');
+        
+        fetch('@Url.Action("RunCompleteScenario")')
+            .then(response => response.json())
+            .then(result => {
+                showResults(result, 'Complete Workflow Scenario Results');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showResults({
+                    isSuccess: false,
+                    summary: 'Scenario test failed due to an error',
+                    steps: ['❌ Error: ' + error.message]
+                }, 'Complete Workflow Scenario - Error');
+            });
+    });
+});
+</script>
+
+<style>
+.test-steps {
+    margin-top: 1rem;
+}
+
+.test-steps pre {
+    background-color: #2d3748;
+    color: #e2e8f0;
+    border-radius: 0.375rem;
+    white-space: pre-wrap;
+    font-size: 0.9em;
+}
+
+.jumbotron {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.card {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease-in-out;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+}
+
+.list-group-item {
+    border: none;
+    padding: 1rem;
+}
+
+.list-group-item i {
+    width: 20px;
+    margin-right: 10px;
+}
+</style>
