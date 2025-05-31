@@ -4,6 +4,7 @@ using Piranha;
 using Piranha.AspNetCore.Identity.SQLite;
 using Piranha.AttributeBuilder;
 using Piranha.Data.EF.SQLite;
+using Piranha.Extensions;
 using Piranha.Manager.Editor;
 using MvcWeb.Models;
 using OpenTelemetry;
@@ -75,6 +76,7 @@ builder.AddPiranha(options =>
     builder.Services.AddScoped<ArticleSubmissionRepository>();
     
     // Register dynamic workflow services
+    builder.Services.AddDynamicWorkflow(); // Register the core dynamic workflow service
     builder.Services.AddScoped<DynamicArticleSubmissionRepository>();
     builder.Services.AddScoped<MvcWeb.Services.DynamicWorkflowTestService>();
     

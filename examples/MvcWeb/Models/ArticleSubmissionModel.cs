@@ -136,5 +136,15 @@ namespace MvcWeb.Models
         /// Gets/sets the optional post id if this article was published.
         /// </summary>
         public Guid? PostId { get; set; }
+
+        /// <summary>
+        /// Gets/sets the workflow definition ID for this article.
+        /// </summary>
+        public Guid? WorkflowId { get; set; }
+
+        /// <summary>
+        /// Gets/sets the current workflow state key.
+        /// </summary>
+        public string WorkflowState { get; set; }
     }
 }

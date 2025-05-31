@@ -1,10 +1,10 @@
 @model MvcWeb.Models.SubmittedArticle
+@using Piranha.Models
 @{
     ViewBag.Title = "Review Article";
-    var userRoles = (IList<string>)ViewBag.UserRoles;
-    
-    bool IsEditor = userRoles.Contains("Editor") || userRoles.Contains("SysAdmin");
-    bool IsApprover = userRoles.Contains("Approver") || userRoles.Contains("SysAdmin");
+    var userRoles = ViewBag.UserRoles as IList<string> ?? new List<string>();
+    var availableTransitions = ViewBag.AvailableTransitions as IList<WorkflowTransition> ?? new List<WorkflowTransition>();
+    var currentState = ViewBag.CurrentState as string ?? "draft";
 }
 
 <div class="container">
@@ -21,16 +21,16 @@
             <div class="card mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h4 class="mb-0">Article Preview</h4>
-                    <span class="badge @(Model.Status switch {
-                                            MvcWeb.Models.ArticleStatus.Draft => "bg-secondary",
-                                            MvcWeb.Models.ArticleStatus.InReview => "bg-info",
-                                            MvcWeb.Models.ArticleStatus.Rejected => "bg-danger",
-                                            MvcWeb.Models.ArticleStatus.Approved => "bg-warning",
-                                            MvcWeb.Models.ArticleStatus.Published => "bg-success",
-                                            MvcWeb.Models.ArticleStatus.Archived => "bg-dark",
+                    <span class="badge @((!string.IsNullOrEmpty(Model.WorkflowState) ? Model.WorkflowState : currentState) switch {
+                                            "draft" => "bg-secondary",
+                                            "in_review" => "bg-info",
+                                            "rejected" => "bg-danger",
+                                            "approved" => "bg-warning",
+                                            "published" => "bg-success",
+                                            "archived" => "bg-dark",
                                             _ => "bg-secondary"
                                         })">
-                        @Model.Status.ToString()
+                        @((!string.IsNullOrEmpty(Model.WorkflowState) ? Model.WorkflowState : currentState)?.Replace("_", " ").ToUpperInvariant() ?? "DRAFT")
                     </span>
                 </div>
                 <div class="card-body">
@@ -85,7 +85,7 @@
                 <div class="card-body">
                     <dl>
                         <dt>Status</dt>
-                        <dd>@Model.Status.ToString()</dd>
+                        <dd>@((!string.IsNullOrEmpty(Model.WorkflowState) ? Model.WorkflowState : currentState)?.Replace("_", " ").ToUpperInvariant() ?? "DRAFT")</dd>
                         
                         <dt>Author</dt>
                         <dd>@Model.Submission.Author</dd>
@@ -131,65 +131,52 @@
                     <h5 class="mb-0">Actions</h5>
                 </div>
                 <div class="card-body">
-                    <form method="post">
-                        @if (Model.Status == MvcWeb.Models.ArticleStatus.Draft && IsEditor)
-                        {
+                    @if (availableTransitions != null && availableTransitions.Any())
+                    {
+                        <form method="post">
                             <div class="mb-3">
                                 <label for="feedback" class="form-label">Feedback for Author</label>
-                                <textarea name="feedback" id="feedback" class="form-control" rows="3"></textarea>
+                                <textarea name="feedback" id="feedback" class="form-control" rows="3" placeholder="Optional feedback for the author..."></textarea>
                             </div>
                             
                             <div class="d-grid gap-2">
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.InReview" class="btn btn-success">
-                                    <i class="fas fa-check"></i> Approve for Review
-                                </button>
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.Rejected" class="btn btn-danger">
-                                    <i class="fas fa-times"></i> Reject
-                                </button>
+                                @foreach (var transition in availableTransitions)
+                                {
+                                    var buttonClass = transition.ToStateKey switch
+                                    {
+                                        "published" => "btn btn-primary",
+                                        "approved" => "btn btn-success",
+                                        "rejected" => "btn btn-danger",
+                                        "draft" => "btn btn-secondary",
+                                        "in_review" => "btn btn-info",
+                                        "archived" => "btn btn-dark",
+                                        _ => "btn btn-outline-primary"
+                                    };
+                                    
+                                    var icon = transition.ToStateKey switch
+                                    {
+                                        "published" => "fas fa-globe",
+                                        "approved" => "fas fa-check",
+                                        "rejected" => "fas fa-times",
+                                        "draft" => "fas fa-undo",
+                                        "in_review" => "fas fa-eye",
+                                        "archived" => "fas fa-archive",
+                                        _ => "fas fa-arrow-right"
+                                    };
+                                    
+                                    <button type="submit" name="targetState" value="@transition.ToStateKey" class="@buttonClass">
+                                        <i class="@icon"></i> @transition.Name
+                                    </button>
+                                }
                             </div>
-                        }
-                        
-                        @if (Model.Status == MvcWeb.Models.ArticleStatus.InReview && IsApprover)
-                        {
-                            <div class="mb-3">
-                                <label for="feedback" class="form-label">Feedback for Author</label>
-                                <textarea name="feedback" id="feedback" class="form-control" rows="3"></textarea>
-                            </div>
-                            
-                            <div class="d-grid gap-2">
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.Approved" class="btn btn-success">
-                                    <i class="fas fa-check"></i> Approve
-                                </button>
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.Rejected" class="btn btn-danger">
-                                    <i class="fas fa-times"></i> Reject
-                                </button>
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.Draft" class="btn btn-secondary">
-                                    <i class="fas fa-undo"></i> Send Back to Draft
-                                </button>
-                            </div>
-                        }
-                        
-                        @if (Model.Status == MvcWeb.Models.ArticleStatus.Approved && IsApprover)
-                        {
-                            <div class="d-grid gap-2">
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.Published" class="btn btn-primary">
-                                    <i class="fas fa-globe"></i> Publish
-                                </button>
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.InReview" class="btn btn-secondary">
-                                    <i class="fas fa-undo"></i> Send Back to Review
-                                </button>
-                            </div>
-                        }
-                        
-                        @if (Model.Status == MvcWeb.Models.ArticleStatus.Published && IsApprover)
-                        {
-                            <div class="d-grid gap-2">
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.Archived" class="btn btn-secondary">
-                                    <i class="fas fa-archive"></i> Archive
-                                </button>
-                            </div>
-                        }
-                    </form>
+                        </form>
+                    }
+                    else
+                    {
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i> No workflow transitions are available for your current role.
+                        </div>
+                    }
                 </div>
             </div>
         </div>

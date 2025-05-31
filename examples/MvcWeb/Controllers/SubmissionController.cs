@@ -40,7 +40,7 @@ namespace MvcWeb.Controllers
             using var activity = ActivitySource.StartActivity("SubmissionController.Index");
             
             // Get all published submissions
-            var submissions = await _repository.GetSubmissionsAsync(ArticleStatus.Published);
+            var submissions = await _repository.GetSubmissionsByStatusAsync(ArticleStatus.Published);
             
             SubmissionListViewsCounter.Add(1, new KeyValuePair<string, object?>("submissionCount", submissions.Count));
             activity?.SetTag("submissionCount", submissions.Count);

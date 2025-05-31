@@ -5,6 +5,7 @@ using Piranha.AspNetCore.Identity.Data;
 using Piranha.Extend.Blocks;
 using Piranha.Extend.Fields;
 using Piranha.Models;
+using Piranha.Services;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
@@ -19,6 +20,7 @@ namespace MvcWeb.Models
         private readonly ILogger<ArticleSubmissionRepository> _logger;
         private readonly UserManager<User> _userManager;
         private readonly ArticleDbContext _dbContext;
+        private readonly IDynamicWorkflowService _workflowService;
         
         private static readonly ActivitySource ActivitySource = new("MvcWeb.ArticleSubmissionRepository");
         private static readonly Meter Meter = new("MvcWeb.ArticleSubmissionRepository");
@@ -32,12 +34,14 @@ namespace MvcWeb.Models
         public ArticleSubmissionRepository(IApi api, 
             ILogger<ArticleSubmissionRepository> logger, 
             UserManager<User> userManager,
-            ArticleDbContext dbContext)
+            ArticleDbContext dbContext,
+            IDynamicWorkflowService workflowService)
         {
             _api = api;
             _logger = logger;
             _userManager = userManager;
             _dbContext = dbContext;
+            _workflowService = workflowService;
         }
 
         /// <summary>
@@ -54,13 +58,50 @@ namespace MvcWeb.Models
             
             try
             {
+                // Get default workflow for articles
+                var workflow = await _workflowService.GetDefaultWorkflowAsync("post");
+                if (workflow == null)
+                {
+                    // Check if any workflows exist for articles before creating a new one
+                    var existingWorkflows = await _workflowService.GetWorkflowsForContentTypeAsync("post");
+                    if (existingWorkflows.Any())
+                    {
+                        // Check if the existing workflow has roles - if not, it's incomplete
+                        var firstWorkflow = existingWorkflows.First();
+                        var roles = await _workflowService.GetEffectiveRolesAsync(firstWorkflow.Id, new[] { "SysAdmin" });
+                        
+                        if (roles.Any())
+                        {
+                            // Use the existing complete workflow
+                            workflow = firstWorkflow;
+                            _logger.LogWarning("No default workflow found for posts, using existing workflow: {WorkflowName} (ID: {WorkflowId})", 
+                                workflow.Name, workflow.Id);
+                        }
+                        else
+                        {
+                            // Existing workflow is incomplete, create a new one
+                            _logger.LogWarning("Found incomplete workflow for posts (no roles), creating new complete workflow");
+                            workflow = await _workflowService.CreateDefaultWorkflowAsync("post", "Article Approval Workflow");
+                            _logger.LogInformation("Created new default workflow for articles: {WorkflowName} (ID: {WorkflowId})", 
+                                workflow.Name, workflow.Id);
+                        }
+                    }
+                    else
+                    {
+                        // Only create a new workflow if none exist at all
+                        workflow = await _workflowService.CreateDefaultWorkflowAsync("post", "Article Approval Workflow");
+                        _logger.LogInformation("Created new default workflow for articles: {WorkflowName} (ID: {WorkflowId})", 
+                            workflow.Name, workflow.Id);
+                    }
+                }
+
                 // Create entity from model
                 var entity = new ArticleEntity
                 {
                     Id = Guid.NewGuid(),
                     Created = DateTime.Now,
                     LastModified = DateTime.Now,
-                    Status = ArticleStatus.Draft,
+                    Status = ArticleStatus.Draft, // Keep legacy status for backward compatibility
                     Title = model.Title,
                     Category = model.Category,
                     Tags = model.Tags,
@@ -69,7 +110,10 @@ namespace MvcWeb.Models
                     Email = model.Email,
                     Author = model.Author,
                     NotifyOnComment = model.NotifyOnComment,
-                    BlogId = blogId
+                    BlogId = blogId,
+                    // Set dynamic workflow properties
+                    WorkflowId = workflow.Id,
+                    WorkflowState = workflow.InitialState // Use workflow's initial state instead of hardcoded draft
                 };
 
                 // If a primary image was provided, save it to media
@@ -105,6 +149,9 @@ namespace MvcWeb.Models
                 activity?.SetTag("submissionId", entity.Id.ToString());
                 activity?.SetTag("outcome", "success");
 
+                // Log workflow transition
+                await LogWorkflowTransitionAsync(entity.Id, null, workflow.InitialState, "Article created", "system", $"Article '{entity.Title}' created by {entity.Author}");
+
                 // Convert to SubmittedArticle for API consistency
                 return ConvertToSubmittedArticle(entity);
             }
@@ -135,7 +182,10 @@ namespace MvcWeb.Models
                 Created = entity.Created,
                 LastModified = entity.LastModified,
                 Published = entity.Published,
-                Status = entity.Status,
+                // Use workflow state to determine status, fallback to entity status for legacy compatibility
+                Status = !string.IsNullOrEmpty(entity.WorkflowState) 
+                    ? MapWorkflowStateToStatus(entity.WorkflowState) 
+                    : entity.Status,
                 Submission = new ArticleSubmissionModel
                 {
                     Title = entity.Title,
@@ -151,31 +201,35 @@ namespace MvcWeb.Models
                 ReviewedById = entity.ReviewedById,
                 ApprovedById = entity.ApprovedById,
                 BlogId = entity.BlogId,
-                PostId = entity.PostId
+                PostId = entity.PostId,
+                // Include workflow properties
+                WorkflowId = entity.WorkflowId,
+                WorkflowState = entity.WorkflowState
             };
         }
 
         /// <summary>
-        /// Gets a list of all submissions, filtered by status and/or user
+        /// Gets a list of all submissions, filtered by workflow state and/or user
         /// </summary>
-        public async Task<List<SubmittedArticle>> GetSubmissionsAsync(ArticleStatus? status = null, string userId = null)
+        public async Task<List<SubmittedArticle>> GetSubmissionsAsync(string workflowState = null, string userId = null)
         {
             // Start with base query
             IQueryable<ArticleEntity> query = _dbContext.Articles;
             
-            // Apply status filter if provided
-            if (status.HasValue)
+            // Apply workflow state filter if provided
+            if (!string.IsNullOrEmpty(workflowState))
             {
-                query = query.Where(a => a.Status == status.Value);
+                query = query.Where(a => a.WorkflowState == workflowState);
             }
             
             // Apply user filter if provided
             if (!string.IsNullOrEmpty(userId))
             {
                 query = query.Where(a => 
-                    (a.Status == ArticleStatus.Draft && a.Author == userId) || 
-                    (a.Status == ArticleStatus.InReview && a.ReviewedById == userId) ||
-                    (a.Status == ArticleStatus.Approved && a.ApprovedById == userId));
+                    (a.WorkflowState == "draft" && a.AuthorId == userId) || 
+                    (a.WorkflowState == "in_review" && a.ReviewedById == userId) ||
+                    (a.WorkflowState == "approved" && a.ApprovedById == userId) ||
+                    a.AuthorId == userId); // User can always see their own articles
             }
             
             // Order by last modified
@@ -184,6 +238,16 @@ namespace MvcWeb.Models
             // Execute query and convert to SubmittedArticle objects
             var entities = await query.ToListAsync();
             return entities.Select(ConvertToSubmittedArticle).ToList();
+        }
+
+        /// <summary>
+        /// Legacy method for backward compatibility - converts status to workflow state
+        /// </summary>
+        [Obsolete("Use GetSubmissionsByWorkflowStateAsync with workflowState parameter instead")]
+        public async Task<List<SubmittedArticle>> GetSubmissionsByStatusAsync(ArticleStatus? status = null, string userId = null)
+        {
+            var workflowState = status.HasValue ? MapStatusToWorkflowState(status.Value) : null;
+            return await GetSubmissionsAsync(workflowState, userId);
         }
 
         /// <summary>
@@ -201,11 +265,11 @@ namespace MvcWeb.Models
         }
 
         /// <summary>
-        /// Updates the status of a submission
+        /// Updates the workflow state of a submission using dynamic workflow transitions
         /// </summary>
-        public async Task<SubmittedArticle> UpdateSubmissionStatusAsync(
+        public async Task<SubmittedArticle> UpdateSubmissionWorkflowStateAsync(
             Guid id, 
-            ArticleStatus status, 
+            string newWorkflowState, 
             string userId, 
             string feedback = null)
         {
@@ -215,34 +279,36 @@ namespace MvcWeb.Models
                 return null;
             }
 
-            entity.Status = status;
+            // Update workflow state
+            entity.WorkflowState = newWorkflowState;
             entity.LastModified = DateTime.Now;
             entity.EditorialFeedback = feedback;
 
-            // Update the appropriate reviewer based on status
-            if (status == ArticleStatus.InReview || status == ArticleStatus.Rejected)
-            {
-                entity.ReviewedById = userId;
-            }
-            else if (status == ArticleStatus.Approved || status == ArticleStatus.Published)
-            {
-                entity.ApprovedById = userId;
-                entity.Published = DateTime.Now;
-                
-                // Create an actual post in Piranha when approved or published
-                // Only if the article hasn't been published yet
-                if (!entity.PostId.HasValue) 
-                {
-                    var article = ConvertToSubmittedArticle(entity);
-                    await CreatePostFromSubmissionAsync(article);
-                    entity.PostId = article.PostId;
-                }
-            }
+            // Map workflow state to legacy status for backward compatibility
+            entity.Status = MapWorkflowStateToStatus(newWorkflowState);
+
+            // Update reviewer/approver information based on workflow state
+            await UpdateEntityForWorkflowStateAsync(entity, newWorkflowState, userId, feedback);
 
             // Save changes to database
             await _dbContext.SaveChangesAsync();
 
             return ConvertToSubmittedArticle(entity);
+        }
+
+        /// <summary>
+        /// Legacy method for backward compatibility - redirects to workflow-based updates
+        /// </summary>
+        [Obsolete("Use UpdateSubmissionWorkflowStateAsync instead")]
+        public async Task<SubmittedArticle> UpdateSubmissionStatusAsync(
+            Guid id, 
+            ArticleStatus status, 
+            string userId, 
+            string feedback = null)
+        {
+            // Convert legacy status to workflow state
+            var workflowState = MapStatusToWorkflowState(status);
+            return await UpdateSubmissionWorkflowStateAsync(id, workflowState, userId, feedback);
         }
 
         /// <summary>
@@ -363,6 +429,93 @@ namespace MvcWeb.Models
                 _logger.LogError(ex, "Error creating post from article submission {ArticleId}", article.Id);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Updates entity properties based on workflow state
+        /// </summary>
+        private async Task UpdateEntityForWorkflowStateAsync(ArticleEntity entity, string workflowState, string userId, string feedback)
+        {
+            switch (workflowState.ToLower())
+            {
+                case "in_review":
+                    entity.ReviewedById = userId;
+                    if (!string.IsNullOrEmpty(feedback))
+                        entity.EditorialFeedback = feedback;
+                    break;
+
+                case "approved":
+                    entity.ApprovedById = userId;
+                    if (!string.IsNullOrEmpty(feedback))
+                        entity.EditorialFeedback = feedback;
+                    break;
+
+                case "published":
+                    entity.ApprovedById = userId;
+                    entity.Published = DateTime.Now;
+                    if (!string.IsNullOrEmpty(feedback))
+                        entity.EditorialFeedback = feedback;
+                    
+                    // Create an actual post in Piranha when published
+                    if (!entity.PostId.HasValue)
+                    {
+                        var article = ConvertToSubmittedArticle(entity);
+                        await CreatePostFromSubmissionAsync(article);
+                        entity.PostId = article.PostId;
+                    }
+                    break;
+
+                case "rejected":
+                    entity.ReviewedById = userId;
+                    if (!string.IsNullOrEmpty(feedback))
+                        entity.EditorialFeedback = feedback;
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Maps workflow state to legacy ArticleStatus for backward compatibility
+        /// </summary>
+        private static ArticleStatus MapWorkflowStateToStatus(string workflowState)
+        {
+            return workflowState?.ToLower() switch
+            {
+                "draft" => ArticleStatus.Draft,
+                "in_review" => ArticleStatus.InReview,
+                "rejected" => ArticleStatus.Rejected,
+                "approved" => ArticleStatus.Approved,
+                "published" => ArticleStatus.Published,
+                "archived" => ArticleStatus.Archived,
+                _ => ArticleStatus.Draft
+            };
+        }
+
+        /// <summary>
+        /// Maps legacy ArticleStatus to workflow state
+        /// </summary>
+        private static string MapStatusToWorkflowState(ArticleStatus status)
+        {
+            return status switch
+            {
+                ArticleStatus.Draft => "draft",
+                ArticleStatus.InReview => "in_review",
+                ArticleStatus.Rejected => "rejected",
+                ArticleStatus.Approved => "approved",
+                ArticleStatus.Published => "published",
+                ArticleStatus.Archived => "archived",
+                _ => "draft"
+            };
+        }
+
+        /// <summary>
+        /// Logs workflow transitions for audit purposes
+        /// </summary>
+        private async Task LogWorkflowTransitionAsync(Guid articleId, string fromState, string toState, string transitionName, string userId, string comments)
+        {
+            // In a full implementation, this would save to a WorkflowHistory table
+            // For now, just log to the application logger
+            _logger.LogInformation("Workflow transition for article {ArticleId}: {FromState} -> {ToState} ({TransitionName}) by user {UserId}. Comments: {Comments}", 
+                articleId, fromState ?? "[initial]", toState, transitionName, userId, comments ?? "[none]");
         }
     }
 }
