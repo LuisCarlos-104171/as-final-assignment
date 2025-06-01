@@ -303,6 +303,60 @@ namespace MvcWeb.Controllers
         }
 
         /// <summary>
+        /// Debug endpoint to check workflow definitions and transitions
+        /// </summary>
+        [Route("debug/workflow-definition")]
+        public async Task<IActionResult> DebugWorkflowDefinition()
+        {
+            try
+            {
+                var workflow = await _workflowDefinitionService.GetDefaultByContentTypeAsync("post");
+                if (workflow == null)
+                {
+                    return Json(new { success = false, error = "No default workflow found for post content type" });
+                }
+
+                var result = new {
+                    workflowId = workflow.Id,
+                    workflowName = workflow.Name,
+                    contentTypes = workflow.ContentTypes,
+                    isDefault = workflow.IsDefault,
+                    isActive = workflow.IsActive,
+                    initialState = workflow.InitialState,
+                    states = workflow.States?.Select(s => new {
+                        key = s.Key,
+                        name = s.Name,
+                        color = s.Color,
+                        icon = s.Icon,
+                        isInitial = s.IsInitial,
+                        isPublished = s.IsPublished,
+                        isFinal = s.IsFinal,
+                        sortOrder = s.SortOrder
+                    }).ToList(),
+                    transitions = workflow.Transitions?.Select(t => new {
+                        id = t.Id,
+                        fromState = t.FromStateKey,
+                        toState = t.ToStateKey,
+                        name = t.Name,
+                        description = t.Description,
+                        requiredRoleId = t.RequiredRoleId,
+                        cssClass = t.CssClass,
+                        icon = t.Icon,
+                        requiresComment = t.RequiresComment,
+                        sendNotification = t.SendNotification,
+                        sortOrder = t.SortOrder
+                    }).ToList()
+                };
+
+                return Json(result);
+            }
+            catch (Exception ex)
+            {
+                return Json(new { success = false, error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Shows a thank you page after submission.
         /// </summary>
         [Route("thank-you/{id:Guid}")]
@@ -792,11 +846,9 @@ namespace MvcWeb.Controllers
                     }
                     postId = newPostId.Value;
                     
-                    // Update the article with the new post ID in our database
-                    var tempArticle = await _repository.GetSubmissionByIdAsync(id);
-                    // We need to update the database directly since PostId isn't handled by UpdateSubmissionStatusAsync
-                    // For now, log this - in production you'd want to add a method to update PostId
-                    _logger.LogInformation("Created post {PostId} for article {ArticleId}", postId, id);
+                    // Update the article with the post ID in our database
+                    await _repository.UpdateArticlePostIdAsync(id, postId);
+                    _logger.LogInformation("Created/found post {PostId} for article {ArticleId}", postId, id);
                 }
                 
                 // Use current workflow state and target state from the workflow transition
@@ -1002,40 +1054,61 @@ namespace MvcWeb.Controllers
         /// </summary>
         private ArticleAction CreateActionFromTransition(dynamic transition, string targetState)
         {
-            // Get transition properties - handle different transition object types
-            string name = transition.Name ?? "Transition";
+            // Handle different transition object types
+            string name;
+            bool requiresComment;
+            string cssClass;
+            string icon;
             
-            // Safely get RequiresComment property
-            bool requiresComment = false;
-            try
+            // Check if this is a WorkflowTransition from workflow definition service
+            if (transition is Piranha.Models.WorkflowTransition workflowDefTransition)
             {
-                requiresComment = transition.RequiresComment ?? false;
+                name = workflowDefTransition.Name ?? "Transition";
+                requiresComment = workflowDefTransition.RequiresComment;
+                cssClass = workflowDefTransition.CssClass ?? "btn-primary";
+                icon = workflowDefTransition.Icon ?? "fas fa-arrow-right";
             }
-            catch
+            // Check if this is a WorkflowModel.WorkflowTransition from workflow service
+            else if (transition is Piranha.Manager.Models.WorkflowModel.WorkflowTransition workflowModelTransition)
             {
-                // Property doesn't exist on this transition type
-                requiresComment = false;
+                name = workflowModelTransition.Name ?? "Transition";
+                requiresComment = workflowModelTransition.RequiresComment;
+                cssClass = workflowModelTransition.CssClass ?? "btn-primary";
+                icon = workflowModelTransition.Icon ?? "fas fa-arrow-right";
             }
-            
-            // Safely get other properties with fallbacks
-            string cssClass = "btn-primary";
-            try
+            else
             {
-                cssClass = transition.CssClass ?? "btn-primary";
-            }
-            catch
-            {
-                cssClass = "btn-primary";
-            }
-            
-            string icon = "fas fa-arrow-right";
-            try
-            {
-                icon = transition.Icon ?? "fas fa-arrow-right";
-            }
-            catch
-            {
-                icon = "fas fa-arrow-right";
+                // Fallback to dynamic access for unknown types
+                name = transition.Name ?? "Transition";
+                
+                // Safely get RequiresComment property
+                try
+                {
+                    requiresComment = transition.RequiresComment ?? false;
+                }
+                catch
+                {
+                    requiresComment = false;
+                }
+                
+                // Safely get other properties with fallbacks
+                try
+                {
+                    cssClass = transition.CssClass ?? "btn-primary";
+                }
+                catch
+                {
+                    cssClass = "btn-primary";
+                }
+                
+                try
+                {
+                    icon = transition.Icon ?? "fas fa-arrow-right";
+                }
+                catch
+                {
+                    icon = "fas fa-arrow-right";
+                }
             }
             
             // Map common transition names to better action names and icons
@@ -1161,12 +1234,25 @@ namespace MvcWeb.Controllers
 
 
         /// <summary>
-        /// Creates a Piranha post from article and returns its ID
+        /// Creates a Piranha post from article and returns its ID, or returns existing post ID if one already exists
         /// </summary>
         private async Task<Guid?> CreatePostFromArticleAsync(SubmittedArticle article)
         {
             try
             {
+                // Generate the expected slug for this article
+                var baseSlug = Utils.GenerateSlug(article.Submission.Title);
+                var expectedSlug = $"{baseSlug}-{article.Id.ToString("N")[..8]}"; // Use first 8 chars of article ID
+                
+                // Check if a post with this slug already exists
+                var existingPost = await _api.Posts.GetBySlugAsync(article.BlogId, expectedSlug);
+                if (existingPost != null)
+                {
+                    _logger.LogInformation("Found existing post {PostId} with slug '{Slug}' for article {ArticleId}", 
+                        existingPost.Id, expectedSlug, article.Id);
+                    return existingPost.Id;
+                }
+                
                 // Create a new post
                 var post = await StandardPost.CreateAsync(_api);
                 
@@ -1180,14 +1266,30 @@ namespace MvcWeb.Controllers
                     ? article.Submission.Category
                     : "General";
                 
-                // Generate a unique slug by appending the article ID
-                var baseSlug = Utils.GenerateSlug(article.Submission.Title);
-                post.Slug = $"{baseSlug}-{article.Id.ToString("N")[..8]}"; // Use first 8 chars of article ID
+                // Try the expected slug first, but add fallback for uniqueness
+                var finalSlug = expectedSlug;
+                var slugAttempts = 0;
+                while (slugAttempts < 5) // Try up to 5 times
+                {
+                    var slugExists = await _api.Posts.GetBySlugAsync(article.BlogId, finalSlug);
+                    if (slugExists == null)
+                    {
+                        break; // Slug is unique, we can use it
+                    }
+                    
+                    // Slug exists, try with a timestamp suffix
+                    slugAttempts++;
+                    finalSlug = $"{expectedSlug}-{DateTime.Now.Ticks.ToString()[..8]}";
+                    _logger.LogInformation("Slug '{PreviousSlug}' exists, trying '{NewSlug}' (attempt {Attempt})", 
+                        expectedSlug, finalSlug, slugAttempts);
+                }
+                
+                post.Slug = finalSlug;
                 
                 // Set the workflow state to draft initially
                 post.WorkflowState = "draft";
                 
-                _logger.LogInformation("Creating post with slug: {Slug} for article {ArticleId}", post.Slug, article.Id);
+                _logger.LogInformation("Creating new post with slug: {Slug} for article {ArticleId}", post.Slug, article.Id);
                 
                 // Process tags
                 if (!string.IsNullOrWhiteSpace(article.Submission.Tags))
@@ -1217,8 +1319,18 @@ namespace MvcWeb.Controllers
                 post.MetaTitle = article.Submission.Title;
                 post.MetaDescription = article.Submission.Excerpt;
 
-                // Save the post (without publishing yet)
-                await _api.Posts.SaveAsync(post);
+                try
+                {
+                    // Save the post (without publishing yet)
+                    await _api.Posts.SaveAsync(post);
+                }
+                catch (System.ComponentModel.DataAnnotations.ValidationException ex) when (ex.Message.Contains("slug already exists"))
+                {
+                    // Last resort: use a completely unique slug with GUID
+                    post.Slug = $"{baseSlug}-{Guid.NewGuid().ToString("N")[..12]}";
+                    _logger.LogWarning("Slug conflict persisted, using unique GUID slug: {Slug}", post.Slug);
+                    await _api.Posts.SaveAsync(post);
+                }
                 
                 _logger.LogInformation("Created Piranha post {PostId} from article {ArticleId}", 
                     post.Id, article.Id);

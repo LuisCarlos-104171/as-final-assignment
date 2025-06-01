@@ -89,7 +89,9 @@ public class WorkflowService
             ToState = t.ToStateKey,
             Name = t.Name,
             RoleId = t.RequiredRoleId,
-            CssClass = t.CssClass
+            CssClass = t.CssClass,
+            RequiresComment = t.RequiresComment,
+            Icon = t.Icon
         }).ToList();
 
         return model;
@@ -144,12 +146,13 @@ public class WorkflowService
                 
                 _logger?.LogInformation("Found {TransitionCount} available transitions for page from {CurrentState}: {Transitions}", 
                     workflowTransitions.Count(), model.CurrentState, 
-                    string.Join(", ", workflowTransitions.Select(t => $"{t.FromStateKey}->{t.ToStateKey} (RequiredRole: {t.RequiredRoleId})")));
+                    string.Join(", ", workflowTransitions.Select(t => $"{t.FromStateKey}->{t.ToStateKey} (RequiredRole: {t.RequiredRoleId}, RequiresComment: {t.RequiresComment})")));
                 
                 var transition = workflowTransitions.FirstOrDefault(t => t.ToStateKey == model.TargetState);
 
                 if (transition == null)
                 {
+                    _logger?.LogWarning("No transition found for page from {CurrentState} to {TargetState}", model.CurrentState, model.TargetState);
                     return new StatusMessage
                     {
                         Type = StatusMessage.Error,
@@ -157,9 +160,14 @@ public class WorkflowService
                     };
                 }
 
+                _logger?.LogInformation("Selected transition: {FromState} -> {ToState}, RequiresComment: {RequiresComment}, ProvidedComment: '{Comment}'", 
+                    transition.FromStateKey, transition.ToStateKey, transition.RequiresComment, model.Comment ?? "(null)");
+
                 // Validate comment requirement
                 if (transition.RequiresComment && string.IsNullOrWhiteSpace(model.Comment))
                 {
+                    _logger?.LogWarning("Comment required for transition {FromState} -> {ToState} but none provided", 
+                        transition.FromStateKey, transition.ToStateKey);
                     return new StatusMessage
                     {
                         Type = StatusMessage.Error,
@@ -226,12 +234,13 @@ public class WorkflowService
                 
                 _logger?.LogInformation("Found {TransitionCount} available transitions for post from {CurrentState}: {Transitions}", 
                     workflowTransitions.Count(), model.CurrentState, 
-                    string.Join(", ", workflowTransitions.Select(t => $"{t.FromStateKey}->{t.ToStateKey} (RequiredRole: {t.RequiredRoleId})")));
+                    string.Join(", ", workflowTransitions.Select(t => $"{t.FromStateKey}->{t.ToStateKey} (RequiredRole: {t.RequiredRoleId}, RequiresComment: {t.RequiresComment})")));
                 
                 var transition = workflowTransitions.FirstOrDefault(t => t.ToStateKey == model.TargetState);
 
                 if (transition == null)
                 {
+                    _logger?.LogWarning("No transition found for post from {CurrentState} to {TargetState}", model.CurrentState, model.TargetState);
                     return new StatusMessage
                     {
                         Type = StatusMessage.Error,
@@ -239,9 +248,14 @@ public class WorkflowService
                     };
                 }
 
+                _logger?.LogInformation("Selected transition: {FromState} -> {ToState}, RequiresComment: {RequiresComment}, ProvidedComment: '{Comment}'", 
+                    transition.FromStateKey, transition.ToStateKey, transition.RequiresComment, model.Comment ?? "(null)");
+
                 // Validate comment requirement
                 if (transition.RequiresComment && string.IsNullOrWhiteSpace(model.Comment))
                 {
+                    _logger?.LogWarning("Comment required for transition {FromState} -> {ToState} but none provided", 
+                        transition.FromStateKey, transition.ToStateKey);
                     return new StatusMessage
                     {
                         Type = StatusMessage.Error,

@@ -74,5 +74,15 @@ public class WorkflowModel
         /// Gets/sets the CSS class for the button.
         /// </summary>
         public string CssClass { get; set; }
+
+        /// <summary>
+        /// Gets/sets if comments are required for this transition.
+        /// </summary>
+        public bool RequiresComment { get; set; }
+
+        /// <summary>
+        /// Gets/sets the icon for the transition button.
+        /// </summary>
+        public string Icon { get; set; }
     }
 }

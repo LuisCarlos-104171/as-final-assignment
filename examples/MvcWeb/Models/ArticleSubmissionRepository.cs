@@ -589,5 +589,31 @@ namespace MvcWeb.Models
                 throw;
             }
         }
+
+        /// <summary>
+        /// Updates the PostId for an article submission
+        /// </summary>
+        public async Task UpdateArticlePostIdAsync(Guid articleId, Guid postId)
+        {
+            try
+            {
+                var entity = await _db.ArticleSubmissions.FindAsync(articleId);
+                if (entity != null)
+                {
+                    entity.PostId = postId;
+                    await _db.SaveChangesAsync();
+                    _logger.LogInformation("Updated article {ArticleId} with PostId {PostId}", articleId, postId);
+                }
+                else
+                {
+                    _logger.LogWarning("Article {ArticleId} not found when trying to update PostId", articleId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating PostId {PostId} for article {ArticleId}", postId, articleId);
+                throw;
+            }
+        }
     }
 }
