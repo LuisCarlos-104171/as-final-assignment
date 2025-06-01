@@ -137,4 +137,40 @@ namespace MvcWeb.Models
         /// </summary>
         public Guid? PostId { get; set; }
     }
+
+    /// <summary>
+    /// Represents an available action for an article
+    /// </summary>
+    public class ArticleAction
+    {
+        /// <summary>
+        /// Gets/sets the display name of the action.
+        /// </summary>
+        public string Name { get; set; }
+
+        /// <summary>
+        /// Gets/sets the icon class for the action button.
+        /// </summary>
+        public string Icon { get; set; }
+
+        /// <summary>
+        /// Gets/sets the CSS class for the action button.
+        /// </summary>
+        public string CssClass { get; set; }
+
+        /// <summary>
+        /// Gets/sets the target status this action will transition to.
+        /// </summary>
+        public ArticleStatus TargetStatus { get; set; }
+
+        /// <summary>
+        /// Gets/sets whether this action requires a comment.
+        /// </summary>
+        public bool RequiresComment { get; set; }
+
+        /// <summary>
+        /// Gets/sets whether this action uses the Piranha workflow transition system.
+        /// </summary>
+        public bool IsWorkflowTransition { get; set; }
+    }
 }

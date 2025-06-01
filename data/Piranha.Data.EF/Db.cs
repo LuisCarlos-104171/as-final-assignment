@@ -237,6 +237,11 @@ public abstract class Db<T> : DbContext, IDb where T : Db<T>
     public DbSet<Data.WorkflowTransition> WorkflowTransitions { get; set; }
 
     /// <summary>
+    /// Gets/sets the article submissions set.
+    /// </summary>
+    public DbSet<Data.ArticleSubmission> ArticleSubmissions { get; set; }
+
+    /// <summary>
     /// Default constructor.
     /// </summary>
     /// <param name="options">Configuration options</param>
@@ -495,6 +500,16 @@ public abstract class Db<T> : DbContext, IDb where T : Db<T>
         mb.Entity<Data.WorkflowTransition>().Property(t => t.CssClass).HasMaxLength(64);
         mb.Entity<Data.WorkflowTransition>().Property(t => t.Icon).HasMaxLength(64);
         mb.Entity<Data.WorkflowTransition>().Property(t => t.NotificationTemplate).HasMaxLength(1024);
+
+        // Configure ArticleSubmission
+        mb.Entity<Data.ArticleSubmission>().ToTable("Piranha_ArticleSubmissions");
+        mb.Entity<Data.ArticleSubmission>().Property(a => a.Title).IsRequired().HasMaxLength(128);
+        mb.Entity<Data.ArticleSubmission>().Property(a => a.Excerpt).HasMaxLength(256);
+        mb.Entity<Data.ArticleSubmission>().Property(a => a.Content).IsRequired();
+        mb.Entity<Data.ArticleSubmission>().Property(a => a.Email).IsRequired();
+        mb.Entity<Data.ArticleSubmission>().Property(a => a.Author).IsRequired().HasMaxLength(128);
+        mb.Entity<Data.ArticleSubmission>().HasIndex(a => a.Status);
+        mb.Entity<Data.ArticleSubmission>().HasIndex(a => a.BlogId);
     }
 
     /// <summary>

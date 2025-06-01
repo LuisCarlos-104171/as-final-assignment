@@ -66,10 +66,6 @@ builder.AddPiranha(options =>
     var connectionString = builder.Configuration.GetConnectionString("piranha");
     options.UseEF<SQLiteDb>(db => db.UseSqlite(connectionString));
     options.UseIdentityWithSeed<IdentitySQLiteDb>(db => db.UseSqlite(connectionString));
-
-    // Add our article database context
-    builder.Services.AddDbContext<ArticleDbContext>(options => 
-        options.UseSqlite(connectionString));
         
     // Register our custom repository
     builder.Services.AddScoped<ArticleSubmissionRepository>();
@@ -141,12 +137,6 @@ app.UsePiranha(options =>
     Seed.RunAsync(options.Api).GetAwaiter().GetResult();
 });
 
-// Ensure database is created
-using (var scope = app.Services.CreateScope())
-{
-    var articleDbContext = scope.ServiceProvider.GetService<ArticleDbContext>();
-    articleDbContext?.Database.EnsureCreated();
-}
 
 // Map Prometheus metrics endpoint
 app.MapPrometheusScrapingEndpoint();

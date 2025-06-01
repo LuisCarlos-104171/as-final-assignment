@@ -18,7 +18,7 @@ namespace MvcWeb.Models
         private readonly IApi _api;
         private readonly ILogger<ArticleSubmissionRepository> _logger;
         private readonly UserManager<User> _userManager;
-        private readonly ArticleDbContext _dbContext;
+        private readonly IDb _db;
         
         private static readonly ActivitySource ActivitySource = new("MvcWeb.ArticleSubmissionRepository");
         private static readonly Meter Meter = new("MvcWeb.ArticleSubmissionRepository");
@@ -32,12 +32,12 @@ namespace MvcWeb.Models
         public ArticleSubmissionRepository(IApi api, 
             ILogger<ArticleSubmissionRepository> logger, 
             UserManager<User> userManager,
-            ArticleDbContext dbContext)
+            IDb db)
         {
             _api = api;
             _logger = logger;
             _userManager = userManager;
-            _dbContext = dbContext;
+            _db = db;
         }
 
         /// <summary>
@@ -55,12 +55,12 @@ namespace MvcWeb.Models
             try
             {
                 // Create entity from model
-                var entity = new ArticleEntity
+                var entity = new Piranha.Data.ArticleSubmission
                 {
                     Id = Guid.NewGuid(),
                     Created = DateTime.Now,
                     LastModified = DateTime.Now,
-                    Status = ArticleStatus.Draft,
+                    Status = (int)ArticleStatus.Draft,
                     Title = model.Title,
                     Category = model.Category,
                     Tags = model.Tags,
@@ -93,8 +93,8 @@ namespace MvcWeb.Models
                 }
 
                 // Save to database
-                _dbContext.Articles.Add(entity);
-                await _dbContext.SaveChangesAsync();
+                _db.ArticleSubmissions.Add(entity);
+                await _db.SaveChangesAsync();
 
                 stopwatch.Stop();
                 DatabaseQueryDuration.Record(stopwatch.ElapsedMilliseconds);
@@ -127,7 +127,7 @@ namespace MvcWeb.Models
         /// <summary>
         /// Converts a database entity to a submitted article
         /// </summary>
-        private SubmittedArticle ConvertToSubmittedArticle(ArticleEntity entity)
+        private SubmittedArticle ConvertToSubmittedArticle(Piranha.Data.ArticleSubmission entity)
         {
             return new SubmittedArticle
             {
@@ -135,7 +135,7 @@ namespace MvcWeb.Models
                 Created = entity.Created,
                 LastModified = entity.LastModified,
                 Published = entity.Published,
-                Status = entity.Status,
+                Status = (ArticleStatus)entity.Status,
                 Submission = new ArticleSubmissionModel
                 {
                     Title = entity.Title,
@@ -161,21 +161,21 @@ namespace MvcWeb.Models
         public async Task<List<SubmittedArticle>> GetSubmissionsAsync(ArticleStatus? status = null, string userId = null)
         {
             // Start with base query
-            IQueryable<ArticleEntity> query = _dbContext.Articles;
+            IQueryable<Piranha.Data.ArticleSubmission> query = _db.ArticleSubmissions;
             
             // Apply status filter if provided
             if (status.HasValue)
             {
-                query = query.Where(a => a.Status == status.Value);
+                query = query.Where(a => a.Status == (int)status.Value);
             }
             
             // Apply user filter if provided
             if (!string.IsNullOrEmpty(userId))
             {
                 query = query.Where(a => 
-                    (a.Status == ArticleStatus.Draft && a.Author == userId) || 
-                    (a.Status == ArticleStatus.InReview && a.ReviewedById == userId) ||
-                    (a.Status == ArticleStatus.Approved && a.ApprovedById == userId));
+                    (a.Status == (int)ArticleStatus.Draft && a.Author == userId) || 
+                    (a.Status == (int)ArticleStatus.InReview && a.ReviewedById == userId) ||
+                    (a.Status == (int)ArticleStatus.Approved && a.ApprovedById == userId));
             }
             
             // Order by last modified
@@ -191,7 +191,7 @@ namespace MvcWeb.Models
         /// </summary>
         public async Task<SubmittedArticle> GetSubmissionByIdAsync(Guid id)
         {
-            var entity = await _dbContext.Articles.FindAsync(id);
+            var entity = await _db.ArticleSubmissions.FindAsync(id);
             if (entity == null)
             {
                 return null;
@@ -209,13 +209,13 @@ namespace MvcWeb.Models
             string userId, 
             string feedback = null)
         {
-            var entity = await _dbContext.Articles.FindAsync(id);
+            var entity = await _db.ArticleSubmissions.FindAsync(id);
             if (entity == null)
             {
                 return null;
             }
 
-            entity.Status = status;
+            entity.Status = (int)status;
             entity.LastModified = DateTime.Now;
             entity.EditorialFeedback = feedback;
 
@@ -240,7 +240,7 @@ namespace MvcWeb.Models
             }
 
             // Save changes to database
-            await _dbContext.SaveChangesAsync();
+            await _db.SaveChangesAsync();
 
             return ConvertToSubmittedArticle(entity);
         }
@@ -266,6 +266,10 @@ namespace MvcWeb.Models
                 post.BlogId = article.BlogId;
                 post.Title = article.Submission.Title;
                 
+                // Generate a unique slug by appending the article ID
+                var baseSlug = Utils.GenerateSlug(article.Submission.Title);
+                post.Slug = $"{baseSlug}-{article.Id.ToString("N")[..8]}"; // Use first 8 chars of article ID
+                
                 // Excerpt might be optional in our form but required in Piranha
                 post.Excerpt = !string.IsNullOrWhiteSpace(article.Submission.Excerpt) 
                     ? article.Submission.Excerpt 
@@ -282,6 +286,7 @@ namespace MvcWeb.Models
                 }
                 
                 activity?.SetTag("category", post.Category);
+                activity?.SetTag("slug", post.Slug);
                 post.Published = DateTime.Now; // Ensure the post is published immediately
 
                 // Process tags
