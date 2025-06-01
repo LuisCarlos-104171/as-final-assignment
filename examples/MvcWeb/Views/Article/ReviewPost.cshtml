@@ -1,0 +1,285 @@
+@model MvcWeb.Models.WorkflowItem
+@{
+    ViewBag.Title = "Review Post";
+    var availableActions = ViewBag.AvailableActions as List<MvcWeb.Models.ArticleAction> ?? new List<MvcWeb.Models.ArticleAction>();
+}
+
+<div class="container">
+    <div class="row">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="@Url.Action("Workflow")">Content Workflow</a></li>
+                    <li class="breadcrumb-item active">Review Post</li>
+                </ol>
+            </nav>
+            
+            <div class="d-flex justify-content-between align-items-start mb-4">
+                <div>
+                    <h1 class="mb-2">@Model.Title</h1>
+                    <div class="text-muted">
+                        <i class="fas fa-newspaper me-2"></i>Piranha Post
+                        <span class="mx-2">•</span>
+                        <i class="fas fa-calendar me-1"></i>Created: @Model.Created.ToString("yyyy-MM-dd HH:mm")
+                        <span class="mx-2">•</span>
+                        <i class="fas fa-clock me-1"></i>Modified: @Model.LastModified.ToString("yyyy-MM-dd HH:mm")
+                    </div>
+                </div>
+                <div class="text-end">
+                    <span class="badge @Model.GetStatusBadgeClass() fs-6">
+                        @Model.GetDisplayStatus()
+                    </span>
+                    @if (Model.IsPublished)
+                    {
+                        <br>
+                        <small class="text-success">
+                            <i class="fas fa-eye me-1"></i>Published
+                        </small>
+                    }
+                </div>
+            </div>
+            
+            @if (!string.IsNullOrEmpty(ViewBag.ErrorMessage))
+            {
+                <div class="alert alert-danger">
+                    @ViewBag.ErrorMessage
+                </div>
+            }
+            
+            @if (ViewData.ModelState != null && !ViewData.ModelState.IsValid)
+            {
+                <div class="alert alert-danger">
+                    @foreach (var error in ViewData.ModelState.Values.SelectMany(v => v.Errors))
+                    {
+                        <div>@error.ErrorMessage</div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-file-alt me-2"></i>Post Content
+                    </h5>
+                </div>
+                <div class="card-body">
+                    @if (Model.Post != null)
+                    {
+                        <div class="mb-3">
+                            <strong>Excerpt:</strong>
+                            <p class="text-muted">@(Model.Post.Excerpt ?? "No excerpt provided")</p>
+                        </div>
+                        
+                        @if (Model.Post.Category != null)
+                        {
+                            <div class="mb-3">
+                                <strong>Category:</strong>
+                                <span class="badge bg-secondary">@Model.Post.Category.Title</span>
+                            </div>
+                        }
+                        
+                        @if (Model.Post.Tags?.Any() == true)
+                        {
+                            <div class="mb-3">
+                                <strong>Tags:</strong>
+                                @foreach (var tag in Model.Post.Tags)
+                                {
+                                    <span class="badge bg-light text-dark me-1">@tag.Title</span>
+                                }
+                            </div>
+                        }
+                        
+                        @if (!string.IsNullOrEmpty(Model.Post.MetaDescription))
+                        {
+                            <div class="mb-3">
+                                <strong>Meta Description:</strong>
+                                <p class="small text-muted">@Model.Post.MetaDescription</p>
+                            </div>
+                        }
+                    }
+                    
+                    <p class="text-muted">
+                        <em>Full post content is available in the Piranha Manager interface.</em>
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-cogs me-2"></i>Workflow Actions
+                    </h5>
+                </div>
+                <div class="card-body">
+                    @if (availableActions.Any())
+                    {
+                        <p class="text-muted small mb-3">
+                            Based on your role and the current workflow state, you can perform the following actions:
+                        </p>
+                        
+                        <form method="post" id="workflowForm">
+                            <div class="mb-3">
+                                <label for="targetState" class="form-label">Action</label>
+                                <select class="form-select" id="targetState" name="targetState" required>
+                                    <option value="">Select an action...</option>
+                                    @foreach (var action in availableActions)
+                                    {
+                                        <option value="@MapStatusToWorkflowState(action.TargetStatus)" 
+                                                data-requires-comment="@action.RequiresComment.ToString().ToLower()"
+                                                data-css-class="@action.CssClass">
+                                            @action.Name
+                                        </option>
+                                    }
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3" id="feedbackSection" style="display: none;">
+                                <label for="feedback" class="form-label">
+                                    <span id="feedbackLabel">Feedback</span>
+                                    <span class="text-danger" id="feedbackRequired" style="display: none;">*</span>
+                                </label>
+                                <textarea class="form-control" id="feedback" name="feedback" rows="3" 
+                                         placeholder="Enter your feedback or comments..."></textarea>
+                                <div class="form-text">
+                                    Provide feedback for this workflow transition.
+                                </div>
+                            </div>
+                            
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn" id="submitBtn" disabled>
+                                    <i class="fas fa-arrow-right me-2"></i>
+                                    <span id="submitText">Select Action</span>
+                                </button>
+                                <a href="@Url.Action("Workflow")" class="btn btn-outline-secondary">
+                                    <i class="fas fa-arrow-left me-2"></i>Back to Workflow
+                                </a>
+                            </div>
+                        </form>
+                    }
+                    else
+                    {
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            No workflow actions are available for this post in its current state.
+                        </div>
+                        
+                        <div class="d-grid">
+                            <a href="@Url.Action("Workflow")" class="btn btn-outline-secondary">
+                                <i class="fas fa-arrow-left me-2"></i>Back to Workflow
+                            </a>
+                        </div>
+                    }
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h6 class="card-title mb-0">
+                        <i class="fas fa-info-circle me-2"></i>Post Information
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="small">
+                        <div class="mb-2">
+                            <strong>Post ID:</strong> @Model.Id
+                        </div>
+                        <div class="mb-2">
+                            <strong>Blog ID:</strong> @Model.BlogId
+                        </div>
+                        <div class="mb-2">
+                            <strong>Content Type:</strong> @Model.ContentType.ToUpper()
+                        </div>
+                        <div class="mb-2">
+                            <strong>Current State:</strong> @Model.WorkflowState
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@functions {
+    string MapStatusToWorkflowState(MvcWeb.Models.ArticleStatus status)
+    {
+        return status switch
+        {
+            MvcWeb.Models.ArticleStatus.Draft => "draft",
+            MvcWeb.Models.ArticleStatus.InReview => "in_review",
+            MvcWeb.Models.ArticleStatus.Approved => "approved",
+            MvcWeb.Models.ArticleStatus.Published => "published",
+            MvcWeb.Models.ArticleStatus.Rejected => "rejected",
+            _ => "draft"
+        };
+    }
+}
+
+@section Scripts {
+    <script>
+        $(document).ready(function() {
+            const targetStateSelect = $('#targetState');
+            const feedbackSection = $('#feedbackSection');
+            const feedbackTextarea = $('#feedback');
+            const feedbackRequired = $('#feedbackRequired');
+            const feedbackLabel = $('#feedbackLabel');
+            const submitBtn = $('#submitBtn');
+            const submitText = $('#submitText');
+            
+            targetStateSelect.on('change', function() {
+                const selectedOption = $(this).find('option:selected');
+                const requiresComment = selectedOption.data('requires-comment') === true;
+                const cssClass = selectedOption.data('css-class') || 'btn-primary';
+                const actionName = selectedOption.text();
+                
+                if ($(this).val()) {
+                    // Show feedback section
+                    feedbackSection.show();
+                    
+                    // Update feedback requirements
+                    if (requiresComment) {
+                        feedbackRequired.show();
+                        feedbackTextarea.prop('required', true);
+                        feedbackLabel.text('Feedback (Required)');
+                    } else {
+                        feedbackRequired.hide();
+                        feedbackTextarea.prop('required', false);
+                        feedbackLabel.text('Feedback (Optional)');
+                    }
+                    
+                    // Update submit button
+                    submitBtn.prop('disabled', false);
+                    submitBtn.removeClass().addClass(`btn ${cssClass}`);
+                    submitText.text(actionName);
+                } else {
+                    // Hide feedback section
+                    feedbackSection.hide();
+                    feedbackTextarea.prop('required', false);
+                    
+                    // Disable submit button
+                    submitBtn.prop('disabled', true);
+                    submitBtn.removeClass().addClass('btn btn-secondary');
+                    submitText.text('Select Action');
+                }
+            });
+            
+            // Form validation
+            $('#workflowForm').on('submit', function(e) {
+                const selectedOption = targetStateSelect.find('option:selected');
+                const requiresComment = selectedOption.data('requires-comment') === true;
+                
+                if (requiresComment && !feedbackTextarea.val().trim()) {
+                    e.preventDefault();
+                    alert('This action requires feedback. Please provide a comment.');
+                    feedbackTextarea.focus();
+                    return false;
+                }
+            });
+        });
+    </script>
+}
