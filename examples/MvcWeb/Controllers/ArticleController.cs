@@ -372,16 +372,19 @@ namespace MvcWeb.Controllers
                 {
                     var availableActions = await GetAvailableActionsAsync(article, roles, userId);
                     
-                    // Only include articles where the user has available actions OR owns the article
+                    var isPublished = await IsWorkflowStatePublishedAsync(article.WorkflowState);
                     bool isOwner = article.SubmittedById == userId;
                     
-                    if (availableActions.Any() || isOwner || roles.Contains("SysAdmin"))
+                    // Only include articles that:
+                    // 1. Are NOT published, AND
+                    // 2. Have available actions for the current user (OR user is SysAdmin)
+                    bool shouldInclude = !isPublished && (availableActions.Any() || roles.Contains("SysAdmin"));
+                    
+                    _logger.LogInformation("Article {ArticleId} ({Title}) - WorkflowState: {WorkflowState}, IsPublished: {IsPublished}, PostId: {PostId}, Actions: {ActionCount}, ShouldInclude: {ShouldInclude}", 
+                        article.Id, article.Submission.Title, article.WorkflowState, isPublished, article.PostId, availableActions.Count, shouldInclude);
+                    
+                    if (shouldInclude)
                     {
-                        var isPublished = await IsWorkflowStatePublishedAsync(article.WorkflowState);
-                        
-                        _logger.LogInformation("Article {ArticleId} ({Title}) - WorkflowState: {WorkflowState}, IsPublished: {IsPublished}, PostId: {PostId}, Actions: {ActionCount}", 
-                            article.Id, article.Submission.Title, article.WorkflowState, isPublished, article.PostId, availableActions.Count);
-                        
                         workflowItems.Add(new WorkflowItem
                         {
                             Id = article.Id,
@@ -408,21 +411,26 @@ namespace MvcWeb.Controllers
                     var currentState = !string.IsNullOrEmpty(post.WorkflowState) ? post.WorkflowState : "draft";
                     var availableTransitions = await _workflowDefinitionService.GetAvailableTransitionsAsync("post", currentState, userRoleIds);
                     
-                    // Only include posts that the user can modify (has available transitions)
-                    if (availableTransitions.Any() || roles.Contains("SysAdmin"))
+                    var availableActions = new List<ArticleAction>();
+                    
+                    // Convert workflow transitions to article actions
+                    foreach (var transition in availableTransitions)
                     {
-                        var availableActions = new List<ArticleAction>();
-                        
-                        // Convert workflow transitions to article actions
-                        foreach (var transition in availableTransitions)
+                        var action = CreateActionFromTransition(transition, transition.ToStateKey);
+                        if (action != null)
                         {
-                            var action = CreateActionFromTransition(transition, transition.ToStateKey);
-                            if (action != null)
-                            {
-                                availableActions.Add(action);
-                            }
+                            availableActions.Add(action);
                         }
-                        
+                    }
+                    
+                    // Only include posts that:
+                    // 1. Are NOT published, AND
+                    // 2. Have available actions for the current user (OR user is SysAdmin)
+                    bool postIsPublished = post.Published.HasValue;
+                    bool postShouldInclude = !postIsPublished && (availableActions.Any() || roles.Contains("SysAdmin"));
+                    
+                    if (postShouldInclude)
+                    {
                         workflowItems.Add(new WorkflowItem
                         {
                             Id = post.Id,
@@ -433,7 +441,7 @@ namespace MvcWeb.Controllers
                             WorkflowState = currentState,
                             ContentType = "post",
                             BlogId = post.BlogId,
-                            IsPublished = post.Published.HasValue,
+                            IsPublished = postIsPublished,
                             Post = post,
                             AvailableActions = availableActions
                         });
