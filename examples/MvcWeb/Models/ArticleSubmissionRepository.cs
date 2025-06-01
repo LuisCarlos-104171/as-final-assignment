@@ -5,6 +5,7 @@ using Piranha.AspNetCore.Identity.Data;
 using Piranha.Extend.Blocks;
 using Piranha.Extend.Fields;
 using Piranha.Models;
+using Piranha.Services;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
@@ -19,6 +20,7 @@ namespace MvcWeb.Models
         private readonly ILogger<ArticleSubmissionRepository> _logger;
         private readonly UserManager<User> _userManager;
         private readonly IDb _db;
+        private readonly IWorkflowDefinitionService _workflowDefinitionService;
         
         private static readonly ActivitySource ActivitySource = new("MvcWeb.ArticleSubmissionRepository");
         private static readonly Meter Meter = new("MvcWeb.ArticleSubmissionRepository");
@@ -32,18 +34,20 @@ namespace MvcWeb.Models
         public ArticleSubmissionRepository(IApi api, 
             ILogger<ArticleSubmissionRepository> logger, 
             UserManager<User> userManager,
-            IDb db)
+            IDb db,
+            IWorkflowDefinitionService workflowDefinitionService)
         {
             _api = api;
             _logger = logger;
             _userManager = userManager;
             _db = db;
+            _workflowDefinitionService = workflowDefinitionService;
         }
 
         /// <summary>
         /// Adds a new article submission
         /// </summary>
-        public async Task<SubmittedArticle> AddSubmissionAsync(ArticleSubmissionModel model, Guid blogId)
+        public async Task<SubmittedArticle> AddSubmissionAsync(ArticleSubmissionModel model, Guid blogId, string submittedById = null)
         {
             using var activity = ActivitySource.StartActivity("ArticleSubmissionRepository.AddSubmission");
             var stopwatch = Stopwatch.StartNew();
@@ -54,13 +58,17 @@ namespace MvcWeb.Models
             
             try
             {
+                // Get the initial workflow state from the workflow definition
+                var initialState = await GetInitialWorkflowStateAsync();
+                
                 // Create entity from model
                 var entity = new Piranha.Data.ArticleSubmission
                 {
                     Id = Guid.NewGuid(),
                     Created = DateTime.Now,
                     LastModified = DateTime.Now,
-                    Status = (int)ArticleStatus.Draft,
+                    Status = (int)ArticleStatus.Draft, // Keep for backward compatibility
+                    WorkflowState = initialState,
                     Title = model.Title,
                     Category = model.Category,
                     Tags = model.Tags,
@@ -69,7 +77,8 @@ namespace MvcWeb.Models
                     Email = model.Email,
                     Author = model.Author,
                     NotifyOnComment = model.NotifyOnComment,
-                    BlogId = blogId
+                    BlogId = blogId,
+                    SubmittedById = submittedById
                 };
 
                 // If a primary image was provided, save it to media
@@ -136,6 +145,7 @@ namespace MvcWeb.Models
                 LastModified = entity.LastModified,
                 Published = entity.Published,
                 Status = (ArticleStatus)entity.Status,
+                WorkflowState = entity.WorkflowState,
                 Submission = new ArticleSubmissionModel
                 {
                     Title = entity.Title,
@@ -151,8 +161,87 @@ namespace MvcWeb.Models
                 ReviewedById = entity.ReviewedById,
                 ApprovedById = entity.ApprovedById,
                 BlogId = entity.BlogId,
-                PostId = entity.PostId
+                PostId = entity.PostId,
+                SubmittedById = entity.SubmittedById
             };
+        }
+
+        /// <summary>
+        /// Gets the initial workflow state from the workflow definition
+        /// </summary>
+        private async Task<string> GetInitialWorkflowStateAsync()
+        {
+            try
+            {
+                var workflow = await _workflowDefinitionService.GetDefaultByContentTypeAsync("post");
+                if (workflow?.States == null || !workflow.States.Any())
+                {
+                    return "draft"; // Fallback
+                }
+
+                // Find the initial state
+                var initialState = workflow.States.FirstOrDefault(s => s.IsInitial);
+                if (initialState != null)
+                {
+                    return initialState.Key;
+                }
+
+                // If no initial state is explicitly marked, use the first state
+                return workflow.States.First().Key;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting initial workflow state");
+                return "draft"; // Fallback
+            }
+        }
+
+        /// <summary>
+        /// Maps workflow state to ArticleStatus for backward compatibility using workflow metadata
+        /// </summary>
+        private ArticleStatus MapWorkflowStateToArticleStatus(string workflowState)
+        {
+            if (string.IsNullOrEmpty(workflowState))
+                return ArticleStatus.Draft;
+
+            try
+            {
+                var workflow = _workflowDefinitionService.GetDefaultByContentTypeAsync("post").Result;
+                if (workflow?.States == null || !workflow.States.Any())
+                {
+                    return ArticleStatus.Draft;
+                }
+
+                var state = workflow.States.FirstOrDefault(s => s.Key == workflowState);
+                if (state == null)
+                {
+                    return ArticleStatus.Draft;
+                }
+
+                // Use workflow state properties to determine ArticleStatus
+                if (state.IsInitial)
+                    return ArticleStatus.Draft;
+                if (state.IsPublished)
+                    return ArticleStatus.Published;
+                if (state.IsFinal)
+                    return ArticleStatus.Published; // Final states are typically published
+
+                // Pattern-based fallback for other states
+                var stateName = state.Name?.ToLower() ?? state.Key.ToLower();
+                if (stateName.Contains("review") || stateName.Contains("pending"))
+                    return ArticleStatus.InReview;
+                if (stateName.Contains("approved") || stateName.Contains("ready"))
+                    return ArticleStatus.Approved;
+                if (stateName.Contains("rejected") || stateName.Contains("denied"))
+                    return ArticleStatus.Rejected;
+
+                return ArticleStatus.InReview; // Default for non-initial, non-final states
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error mapping workflow state {WorkflowState} to ArticleStatus", workflowState);
+                return ArticleStatus.Draft;
+            }
         }
 
         /// <summary>
@@ -173,9 +262,11 @@ namespace MvcWeb.Models
             if (!string.IsNullOrEmpty(userId))
             {
                 query = query.Where(a => 
-                    (a.Status == (int)ArticleStatus.Draft && a.Author == userId) || 
-                    (a.Status == (int)ArticleStatus.InReview && a.ReviewedById == userId) ||
-                    (a.Status == (int)ArticleStatus.Approved && a.ApprovedById == userId));
+                    (a.Status == (int)ArticleStatus.Draft && a.SubmittedById == userId) || 
+                    (a.Status == (int)ArticleStatus.InReview && (a.ReviewedById == userId || a.SubmittedById == userId)) ||
+                    (a.Status == (int)ArticleStatus.Approved && (a.ApprovedById == userId || a.SubmittedById == userId)) ||
+                    (a.Status == (int)ArticleStatus.Rejected && a.SubmittedById == userId) ||
+                    (a.Status == (int)ArticleStatus.Published && a.SubmittedById == userId));
             }
             
             // Order by last modified
@@ -201,11 +292,11 @@ namespace MvcWeb.Models
         }
 
         /// <summary>
-        /// Updates the status of a submission
+        /// Updates the workflow state of a submission
         /// </summary>
-        public async Task<SubmittedArticle> UpdateSubmissionStatusAsync(
+        public async Task<SubmittedArticle> UpdateSubmissionStateAsync(
             Guid id, 
-            ArticleStatus status, 
+            string workflowState, 
             string userId, 
             string feedback = null)
         {
@@ -215,27 +306,99 @@ namespace MvcWeb.Models
                 return null;
             }
 
-            entity.Status = (int)status;
+            entity.WorkflowState = workflowState;
             entity.LastModified = DateTime.Now;
             entity.EditorialFeedback = feedback;
 
-            // Update the appropriate reviewer based on status
-            if (status == ArticleStatus.InReview || status == ArticleStatus.Rejected)
+            // Update status based on workflow state patterns for backward compatibility
+            entity.Status = (int)MapWorkflowStateToArticleStatus(workflowState);
+
+            // Update the appropriate reviewer based on workflow state properties
+            try
             {
-                entity.ReviewedById = userId;
-            }
-            else if (status == ArticleStatus.Approved || status == ArticleStatus.Published)
-            {
-                entity.ApprovedById = userId;
-                entity.Published = DateTime.Now;
+                var workflow = await _workflowDefinitionService.GetDefaultByContentTypeAsync("post");
+                var state = workflow?.States?.FirstOrDefault(s => s.Key == workflowState);
                 
-                // Create an actual post in Piranha when approved or published
-                // Only if the article hasn't been published yet
-                if (!entity.PostId.HasValue) 
+                _logger.LogInformation("Processing workflow state '{WorkflowState}' - Found state: {StateFound}, IsPublished: {IsPublished}, IsFinal: {IsFinal}", 
+                    workflowState, state != null, state?.IsPublished ?? false, state?.IsFinal ?? false);
+                    
+                if (state != null)
                 {
-                    var article = ConvertToSubmittedArticle(entity);
-                    await CreatePostFromSubmissionAsync(article);
-                    entity.PostId = article.PostId;
+                    _logger.LogInformation("State details - Key: '{StateKey}', Name: '{StateName}', IsInitial: {IsInitial}, IsPublished: {IsPublished}, IsFinal: {IsFinal}", 
+                        state.Key, state.Name, state.IsInitial, state.IsPublished, state.IsFinal);
+                }
+                
+                if (state != null)
+                {
+                    // Use workflow state properties to determine reviewer assignment
+                    if (state.IsPublished || state.IsFinal)
+                    {
+                        _logger.LogInformation("Article {ArticleId} transitioning to published/final state '{WorkflowState}'", entity.Id, workflowState);
+                        
+                        entity.ApprovedById = userId;
+                        entity.Published = DateTime.Now;
+                        
+                        // Create or update the Piranha post when published or final
+                        if (!entity.PostId.HasValue) 
+                        {
+                            _logger.LogInformation("Creating new Piranha post for article {ArticleId}", entity.Id);
+                            var article = ConvertToSubmittedArticle(entity);
+                            await CreatePostFromSubmissionAsync(article);
+                            entity.PostId = article.PostId;
+                            _logger.LogInformation("Created Piranha post {PostId} for article {ArticleId}", article.PostId, entity.Id);
+                        }
+                        else
+                        {
+                            _logger.LogInformation("Updating existing Piranha post {PostId} for article {ArticleId}", entity.PostId, entity.Id);
+                            // Update existing post to set published date
+                            await UpdatePostPublishedStatusAsync(entity.PostId.Value, true);
+                        }
+                    }
+                    else if (!state.IsInitial)
+                    {
+                        _logger.LogInformation("Article {ArticleId} transitioning to review state '{WorkflowState}'", entity.Id, workflowState);
+                        // Non-initial, non-published states are review states
+                        entity.ReviewedById = userId;
+                        
+                        // If post exists and we're moving to non-published state, unpublish it
+                        if (entity.PostId.HasValue)
+                        {
+                            await UpdatePostPublishedStatusAsync(entity.PostId.Value, false);
+                        }
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning("Could not find workflow state '{WorkflowState}' in workflow definition", workflowState);
+                    
+                    // Fallback to pattern-based approach
+                    var stateLower = workflowState.ToLower();
+                    if (stateLower.Contains("review") || stateLower.Contains("pending") || stateLower.Contains("rejected"))
+                    {
+                        entity.ReviewedById = userId;
+                    }
+                    else if (stateLower.Contains("approved") || stateLower.Contains("published") || stateLower.Contains("pub") || stateLower.Contains("final"))
+                    {
+                        entity.ApprovedById = userId;
+                        entity.Published = DateTime.Now;
+                        
+                        if (!entity.PostId.HasValue) 
+                        {
+                            var article = ConvertToSubmittedArticle(entity);
+                            await CreatePostFromSubmissionAsync(article);
+                            entity.PostId = article.PostId;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error determining reviewer assignment for workflow state {WorkflowState}", workflowState);
+                // Use pattern-based fallback
+                var stateLower = workflowState.ToLower();
+                if (stateLower.Contains("review") || stateLower.Contains("pending") || stateLower.Contains("rejected"))
+                {
+                    entity.ReviewedById = userId;
                 }
             }
 
@@ -243,6 +406,42 @@ namespace MvcWeb.Models
             await _db.SaveChangesAsync();
 
             return ConvertToSubmittedArticle(entity);
+        }
+
+        /// <summary>
+        /// Updates the published status of an existing Piranha post
+        /// </summary>
+        private async Task UpdatePostPublishedStatusAsync(Guid postId, bool isPublished)
+        {
+            try
+            {
+                var post = await _api.Posts.GetByIdAsync(postId);
+                if (post != null)
+                {
+                    if (isPublished)
+                    {
+                        post.Published = DateTime.Now;
+                        _logger.LogInformation("Setting post {PostId} published date to {PublishedDate}", postId, post.Published);
+                    }
+                    else
+                    {
+                        post.Published = null;
+                        _logger.LogInformation("Removing published date from post {PostId}", postId);
+                    }
+                    
+                    await _api.Posts.SaveAsync(post);
+                    _logger.LogInformation("Updated post {PostId} published status to {IsPublished}", postId, isPublished);
+                }
+                else
+                {
+                    _logger.LogError("Post {PostId} not found when trying to update published status", postId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating published status for post {PostId}", postId);
+                throw;
+            }
         }
 
         /// <summary>
@@ -266,9 +465,18 @@ namespace MvcWeb.Models
                 post.BlogId = article.BlogId;
                 post.Title = article.Submission.Title;
                 
-                // Generate a unique slug by appending the article ID
+                // Generate a unique slug by appending the article ID and timestamp
                 var baseSlug = Utils.GenerateSlug(article.Submission.Title);
-                post.Slug = $"{baseSlug}-{article.Id.ToString("N")[..8]}"; // Use first 8 chars of article ID
+                var uniqueSuffix = $"{article.Id.ToString("N")[..8]}-{DateTime.Now.Ticks.ToString()[..8]}";
+                post.Slug = $"{baseSlug}-{uniqueSuffix}";
+                
+                // Ensure slug is unique by checking if it exists
+                var existingPost = await _api.Posts.GetBySlugAsync(post.BlogId, post.Slug);
+                if (existingPost != null)
+                {
+                    // If still not unique, add random suffix
+                    post.Slug = $"{baseSlug}-{Guid.NewGuid().ToString("N")[..12]}";
+                }
                 
                 // Excerpt might be optional in our form but required in Piranha
                 post.Excerpt = !string.IsNullOrWhiteSpace(article.Submission.Excerpt) 
@@ -337,8 +545,20 @@ namespace MvcWeb.Models
                     activity?.SetTag("postId", post.Id.ToString());
                     activity?.SetTag("outcome", "success");
                     
-                    _logger.LogInformation("Successfully published article {ArticleId} as post {PostId}", 
-                        article.Id, post.Id);
+                    _logger.LogInformation("Successfully published article {ArticleId} as post {PostId} with slug {Slug}, published: {Published}, blogId: {BlogId}", 
+                        article.Id, post.Id, post.Slug, post.Published, post.BlogId);
+                        
+                    // Verify the post was saved correctly by trying to retrieve it
+                    var savedPost = await _api.Posts.GetByIdAsync(post.Id);
+                    if (savedPost != null)
+                    {
+                        _logger.LogInformation("Verified post {PostId} exists: Title='{Title}', Published={Published}, Slug='{Slug}'", 
+                            savedPost.Id, savedPost.Title, savedPost.Published, savedPost.Slug);
+                    }
+                    else
+                    {
+                        _logger.LogError("Post {PostId} was not found after saving!", post.Id);
+                    }
                 }
                 catch (Exception ex)
                 {

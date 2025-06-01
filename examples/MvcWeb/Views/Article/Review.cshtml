@@ -22,16 +22,11 @@
             <div class="card mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h4 class="mb-0">Article Preview</h4>
-                    <span class="badge @(Model.Status switch {
-                                            MvcWeb.Models.ArticleStatus.Draft => "bg-secondary",
-                                            MvcWeb.Models.ArticleStatus.InReview => "bg-info",
-                                            MvcWeb.Models.ArticleStatus.Rejected => "bg-danger",
-                                            MvcWeb.Models.ArticleStatus.Approved => "bg-warning",
-                                            MvcWeb.Models.ArticleStatus.Published => "bg-success",
-                                            MvcWeb.Models.ArticleStatus.Archived => "bg-dark",
-                                            _ => "bg-secondary"
-                                        })">
-                        @Model.Status.ToString()
+                    @{
+                        var workflowItem = new MvcWeb.Models.WorkflowItem { WorkflowState = Model.WorkflowState };
+                    }
+                    <span class="badge @workflowItem.GetStatusBadgeClass()">
+                        @workflowItem.GetDisplayStatus()
                     </span>
                 </div>
                 <div class="card-body">
@@ -86,7 +81,7 @@
                 <div class="card-body">
                     <dl>
                         <dt>Status</dt>
-                        <dd>@Model.Status.ToString()</dd>
+                        <dd>@workflowItem.GetDisplayStatus()</dd>
                         
                         <dt>Author</dt>
                         <dd>@Model.Submission.Author</dd>
@@ -168,8 +163,8 @@
                                 @foreach (var action in availableActions)
                                 {
                                     <button type="submit" 
-                                            name="status" 
-                                            value="@((int)action.TargetStatus)" 
+                                            name="targetState" 
+                                            value="@action.TargetState" 
                                             class="btn @action.CssClass"
                                             @(action.RequiresComment ? "data-requires-comment=\"true\"" : "")
                                             @(action.IsWorkflowTransition ? "data-is-workflow=\"true\"" : "")>

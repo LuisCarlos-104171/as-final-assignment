@@ -90,6 +90,16 @@ public class ArticleSubmission
     public string Author { get; set; }
 
     /// <summary>
+    /// Gets/sets the user ID of who submitted this article.
+    /// </summary>
+    public string SubmittedById { get; set; }
+
+    /// <summary>
+    /// Gets/sets the current workflow state of the article.
+    /// </summary>
+    public string WorkflowState { get; set; }
+
+    /// <summary>
     /// Gets/sets if the author wants to be notified of comments.
     /// </summary>
     public bool NotifyOnComment { get; set; }

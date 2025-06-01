@@ -38,7 +38,7 @@ namespace MvcWeb.Models
         public string WorkflowState { get; set; }
         
         /// <summary>
-        /// Gets/sets the content type (post or article)
+        /// Gets/sets the content type (always "post" for workflow purposes)
         /// </summary>
         public string ContentType { get; set; }
         
@@ -72,47 +72,65 @@ namespace MvcWeb.Models
         /// </summary>
         public string GetReviewUrl()
         {
-            if (ContentType == "article")
+            if (SubmittedArticle != null)
             {
+                // For submitted articles, use the article review URL
                 return $"/article/review/{Id}";
             }
-            else if (ContentType == "post")
+            else if (Post != null)
             {
+                // For Piranha posts, use the post review URL
                 return $"/article/review-post/{Id}";
             }
             return "";
         }
         
         /// <summary>
-        /// Gets the display status for this item
+        /// Gets the display status for this item based on workflow state name
         /// </summary>
         public string GetDisplayStatus()
         {
-            return WorkflowState switch
-            {
-                "draft" => "Draft",
-                "in_review" => "In Review", 
-                "approved" => "Approved",
-                "published" => "Published",
-                "rejected" => "Rejected",
-                _ => WorkflowState ?? "Unknown"
-            };
+            if (string.IsNullOrEmpty(WorkflowState))
+                return "Unknown";
+                
+            // Use the workflow state as-is, with proper capitalization
+            return char.ToUpper(WorkflowState[0]) + WorkflowState.Substring(1).ToLower();
         }
         
         /// <summary>
-        /// Gets the CSS class for the status badge
+        /// Gets the CSS class for the status badge based on workflow state properties
         /// </summary>
         public string GetStatusBadgeClass()
         {
-            return WorkflowState switch
-            {
-                "draft" => "bg-secondary",
-                "in_review" => "bg-info",
-                "rejected" => "bg-danger",
-                "approved" => "bg-warning",
-                "published" => "bg-success",
-                _ => "bg-secondary"
-            };
+            if (string.IsNullOrEmpty(WorkflowState))
+                return "bg-secondary";
+
+            // We need a way to access workflow definition here
+            // For now, use pattern-based approach as fallback
+            // TODO: Inject workflow service or pass workflow metadata
+            return GetStatusBadgeClassByPattern();
+        }
+
+        /// <summary>
+        /// Fallback method for getting badge class based on patterns
+        /// </summary>
+        private string GetStatusBadgeClassByPattern()
+        {
+            var state = WorkflowState.ToLower();
+            
+            // Pattern-based mapping for common state types
+            if (state.Contains("draft") || state.Contains("initial") || state.Contains("new"))
+                return "bg-secondary";
+            if (state.Contains("review") || state.Contains("pending") || state.Contains("submitted"))
+                return "bg-info";
+            if (state.Contains("rejected") || state.Contains("denied") || state.Contains("failed"))
+                return "bg-danger";
+            if (state.Contains("approved") || state.Contains("ready") || state.Contains("accepted"))
+                return "bg-warning";
+            if (state.Contains("published") || state.Contains("pub") || state.Contains("live") || state.Contains("final") || state.Contains("complete"))
+                return "bg-success";
+                
+            return "bg-primary"; // Default for unknown states
         }
     }
 }

@@ -130,7 +130,7 @@
                                     <option value="">Select an action...</option>
                                     @foreach (var action in availableActions)
                                     {
-                                        <option value="@MapStatusToWorkflowState(action.TargetStatus)" 
+                                        <option value="@action.TargetState" 
                                                 data-requires-comment="@action.RequiresComment.ToString().ToLower()"
                                                 data-css-class="@action.CssClass">
                                             @action.Name

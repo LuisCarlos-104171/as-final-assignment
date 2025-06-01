@@ -128,6 +128,16 @@ namespace MvcWeb.Models
         public string ApprovedById { get; set; }
 
         /// <summary>
+        /// Gets/sets the user ID of who submitted this article.
+        /// </summary>
+        public string SubmittedById { get; set; }
+
+        /// <summary>
+        /// Gets/sets the current workflow state of the article.
+        /// </summary>
+        public string WorkflowState { get; set; }
+
+        /// <summary>
         /// Gets/sets the blog id this article belongs to.
         /// </summary>
         public Guid BlogId { get; set; }
@@ -159,9 +169,9 @@ namespace MvcWeb.Models
         public string CssClass { get; set; }
 
         /// <summary>
-        /// Gets/sets the target status this action will transition to.
+        /// Gets/sets the target workflow state this action will transition to.
         /// </summary>
-        public ArticleStatus TargetStatus { get; set; }
+        public string TargetState { get; set; }
 
         /// <summary>
         /// Gets/sets whether this action requires a comment.
