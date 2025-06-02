@@ -14,55 +14,63 @@ namespace MvcWeb.Services
 
         // HTTP Metrics
         public static readonly Counter<int> HttpRequestsCounter = Meter.CreateCounter<int>(
-            "http_requests_total", "Total number of HTTP requests");
+            "http_requests_total");
         public static readonly Histogram<double> HttpRequestDuration = Meter.CreateHistogram<double>(
-            "http_request_duration_ms", "HTTP request duration in milliseconds");
+            "http_request_duration_ms");
 
         // Page View Metrics
         public static readonly Counter<int> PageViewsCounter = Meter.CreateCounter<int>(
-            "page_views_total", "Total number of page views");
+            "page_views_total");
         public static readonly Counter<int> UniqueVisitorsCounter = Meter.CreateCounter<int>(
-            "unique_visitors_total", "Total number of unique visitors (by session)");
+            "unique_sessions_total");
 
         // Authentication Metrics (NO PII)
         public static readonly Counter<int> AuthenticationAttemptsCounter = Meter.CreateCounter<int>(
-            "authentication_attempts_total", "Total authentication attempts");
+            "authentication_attempts_total");
         public static readonly Counter<int> AuthenticationSuccessCounter = Meter.CreateCounter<int>(
-            "authentication_success_total", "Successful authentications");
+            "authentication_success_total");
         public static readonly Counter<int> AuthenticationFailuresCounter = Meter.CreateCounter<int>(
-            "authentication_failures_total", "Failed authentications");
+            "authentication_failures_total");
 
         // CMS Content Metrics
         public static readonly Counter<int> ContentViewsCounter = Meter.CreateCounter<int>(
-            "content_views_total", "Total content views");
+            "content_views_total");
         public static readonly Counter<int> ContentCreationCounter = Meter.CreateCounter<int>(
-            "content_creation_total", "Total content creation events");
+            "content_creation_total");
         public static readonly Histogram<double> ContentLoadTimeCounter = Meter.CreateHistogram<double>(
-            "content_load_time_ms", "Content load time in milliseconds");
+            "content_load_time_ms");
 
         // Business Logic Metrics
         public static readonly Counter<int> WorkflowTransitionsCounter = Meter.CreateCounter<int>(
-            "workflow_transitions_total", "Total workflow state transitions");
+            "workflow_transitions_total");
         public static readonly Counter<int> UserActionsCounter = Meter.CreateCounter<int>(
-            "user_actions_total", "Total user actions");
+            "user_actions_total");
 
         // Error Metrics
         public static readonly Counter<int> ErrorsCounter = Meter.CreateCounter<int>(
-            "errors_total", "Total errors");
+            "errors_total");
         public static readonly Counter<int> NotFoundCounter = Meter.CreateCounter<int>(
-            "not_found_total", "Total 404 responses");
+            "not_found_total");
+
+        // Article-specific metrics for Grafana dashboard
+        public static readonly Counter<int> ArticleSubmissionsCounter = Meter.CreateCounter<int>(
+            "article_submissions_total");
+        public static readonly Counter<int> ArticleReviewsCounter = Meter.CreateCounter<int>(
+            "article_reviews_total");
+        public static readonly Counter<int> SubmissionViewsCounter = Meter.CreateCounter<int>(
+            "submission_views_total");
 
         // Cache Metrics
         public static readonly Counter<int> CacheHitsCounter = Meter.CreateCounter<int>(
-            "cache_hits_total", "Total cache hits");
+            "cache_hits_total");
         public static readonly Counter<int> CacheMissesCounter = Meter.CreateCounter<int>(
-            "cache_misses_total", "Total cache misses");
+            "cache_misses_total");
 
         // Security Metrics (NO PII)
         public static readonly Counter<int> SecurityEventsCounter = Meter.CreateCounter<int>(
-            "security_events_total", "Total security events");
+            "security_events_total");
         public static readonly Counter<int> AccessDeniedCounter = Meter.CreateCounter<int>(
-            "access_denied_total", "Total access denied events");
+            "access_denied_total");
 
         /// <summary>
         /// Records an HTTP request with safe labels (no PII)
@@ -166,11 +174,72 @@ namespace MvcWeb.Services
         }
 
         /// <summary>
+        /// Records article submission events
+        /// </summary>
+        public static void RecordArticleSubmission(string status)
+        {
+            ArticleSubmissionsCounter.Add(1,
+                new KeyValuePair<string, object?>("status", status));
+        }
+
+        /// <summary>
+        /// Records article review/workflow transition events
+        /// </summary>
+        public static void RecordArticleReview(string previousStatus, string newStatus)
+        {
+            ArticleReviewsCounter.Add(1,
+                new KeyValuePair<string, object?>("previousStatus", previousStatus),
+                new KeyValuePair<string, object?>("newStatus", newStatus));
+        }
+
+        /// <summary>
+        /// Records submission view events
+        /// </summary>
+        public static void RecordSubmissionView(string status)
+        {
+            SubmissionViewsCounter.Add(1,
+                new KeyValuePair<string, object?>("status", status));
+        }
+
+        /// <summary>
         /// Creates a new activity for tracing with safe tags (no PII)
         /// </summary>
         public static Activity? StartActivity(string operationName)
         {
-            return ActivitySource.StartActivity(operationName);
+            var activity = ActivitySource.StartActivity(operationName);
+            activity?.SetTag("service.name", "MvcWeb");
+            activity?.SetTag("service.version", "1.0.0");
+            return activity;
+        }
+
+        /// <summary>
+        /// Creates a new activity for tracing database operations
+        /// </summary>
+        public static Activity? StartDatabaseActivity(string operationName, string tableName = "")
+        {
+            var activity = ActivitySource.StartActivity($"DB {operationName}");
+            activity?.SetTag("db.operation", operationName);
+            if (!string.IsNullOrEmpty(tableName))
+            {
+                activity?.SetTag("db.table", tableName);
+            }
+            activity?.SetTag("service.name", "MvcWeb");
+            return activity;
+        }
+
+        /// <summary>
+        /// Creates a new activity for tracing business operations
+        /// </summary>
+        public static Activity? StartBusinessActivity(string operationName, string component = "")
+        {
+            var activity = ActivitySource.StartActivity($"Business {operationName}");
+            activity?.SetTag("business.operation", operationName);
+            if (!string.IsNullOrEmpty(component))
+            {
+                activity?.SetTag("component", component);
+            }
+            activity?.SetTag("service.name", "MvcWeb");
+            return activity;
         }
 
         /// <summary>

@@ -8,6 +8,7 @@ using Piranha.Models;
 using Piranha.Services;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using MvcWeb.Services;
 
 namespace MvcWeb.Models
 {
@@ -110,6 +111,9 @@ namespace MvcWeb.Models
                 RepositoryOperationsCounter.Add(1, 
                     new KeyValuePair<string, object?>("operation", "add_submission"), 
                     new KeyValuePair<string, object?>("status", "success"));
+                
+                // Record article submission metric for Grafana dashboard
+                MetricsService.RecordArticleSubmission(initialState);
                 
                 activity?.SetTag("submissionId", entity.Id.ToString());
                 activity?.SetTag("outcome", "success");
@@ -306,6 +310,7 @@ namespace MvcWeb.Models
                 return null;
             }
 
+            var previousState = entity.WorkflowState;
             entity.WorkflowState = workflowState;
             entity.LastModified = DateTime.Now;
             entity.EditorialFeedback = feedback;
@@ -404,6 +409,9 @@ namespace MvcWeb.Models
 
             // Save changes to database
             await _db.SaveChangesAsync();
+
+            // Record article review metric for Grafana dashboard
+            MetricsService.RecordArticleReview(previousState ?? "unknown", workflowState);
 
             return ConvertToSubmittedArticle(entity);
         }

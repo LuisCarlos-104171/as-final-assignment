@@ -85,11 +85,13 @@ namespace MvcWeb.Controllers
         [Authorize]
         public async Task<IActionResult> Submit(ArticleSubmissionModel model, Guid blogId)
         {
-            using var activity = ActivitySource.StartActivity("ArticleController.Submit");
+            using var activity = MetricsService.StartBusinessActivity("Article Submission", "ArticleController");
             var stopwatch = Stopwatch.StartNew();
             
-            activity?.SetTag("blogId", blogId.ToString());
-            activity?.SetTag("userId", User.Identity?.Name ?? "unknown");
+            activity?.SetTag("blog.id", blogId.ToString());
+            activity?.SetTag("user.name", User.Identity?.Name ?? "unknown");
+            activity?.SetTag("article.title_length", model.Title?.Length ?? 0);
+            activity?.SetTag("article.content_length", model.Content?.Length ?? 0);
             
             if (ModelState.IsValid)
             {
@@ -98,8 +100,10 @@ namespace MvcWeb.Controllers
                     // Get the current user ID
                     var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
                     
-                    // Add the submission
+                    // Add the submission with database activity tracing
+                    using var dbActivity = MetricsService.StartDatabaseActivity("Create Article Submission", "SubmittedArticles");
                     var submission = await _repository.AddSubmissionAsync(model, blogId, userId);
+                    dbActivity?.SetTag("submission.id", submission.Id.ToString());
                     
                     stopwatch.Stop();
                     
@@ -113,9 +117,11 @@ namespace MvcWeb.Controllers
                     MetricsService.RecordHttpRequest("POST", "/article/submit", 302, stopwatch.ElapsedMilliseconds);
                     MetricsService.RecordUserAction("article_submission_success", "content");
                     MetricsService.RecordWorkflowTransition("new", "draft", "article_workflow");
+                    MetricsService.RecordArticleSubmission("success");
                     
-                    activity?.SetTag("submissionId", submission.Id.ToString());
-                    activity?.SetTag("outcome", "success");
+                    activity?.SetTag("submission.id", submission.Id.ToString());
+                    activity?.SetTag("operation.outcome", "success");
+                    activity?.SetTag("operation.duration_ms", stopwatch.ElapsedMilliseconds);
                     
                     _logger.LogInformation("Article submitted successfully with ID {SubmissionId} by user {UserId}", 
                         submission.Id, User.Identity?.Name);
@@ -516,6 +522,12 @@ namespace MvcWeb.Controllers
             
             ViewBag.UserRoles = roles;
             
+            // Record submission view metrics for Grafana dashboard
+            foreach (var item in workflowItems.Where(w => w.SubmittedArticle != null))
+            {
+                MetricsService.RecordSubmissionView(item.WorkflowState);
+            }
+            
             return View(workflowItems);
         }
 
@@ -789,11 +801,12 @@ namespace MvcWeb.Controllers
             _logger.LogInformation("=== REVIEW POST METHOD CALLED === ArticleId: {ArticleId}, TargetState: {TargetState}, User: {User}", 
                 id, targetState, User.Identity?.Name);
                 
-            using var activity = ActivitySource.StartActivity("ArticleController.Review");
+            using var activity = MetricsService.StartBusinessActivity("Article Review", "ArticleController");
             
-            activity?.SetTag("articleId", id.ToString());
-            activity?.SetTag("newState", targetState);
-            activity?.SetTag("userId", User.Identity?.Name ?? "unknown");
+            activity?.SetTag("article.id", id.ToString());
+            activity?.SetTag("workflow.target_state", targetState);
+            activity?.SetTag("user.name", User.Identity?.Name ?? "unknown");
+            activity?.SetTag("feedback.length", feedback?.Length ?? 0);
             
             var article = await _repository.GetSubmissionByIdAsync(id);
             
@@ -803,7 +816,9 @@ namespace MvcWeb.Controllers
                 return NotFound();
             }
             
-            activity?.SetTag("previousState", article.WorkflowState);
+            activity?.SetTag("workflow.previous_state", article.WorkflowState);
+            activity?.SetTag("article.title", article.Submission.Title);
+            activity?.SetTag("article.blog_id", article.BlogId.ToString());
             
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userId))

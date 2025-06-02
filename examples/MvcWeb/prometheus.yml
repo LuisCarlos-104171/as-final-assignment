@@ -19,6 +19,7 @@ scrape_configs:
       # - targets: ['mvcweb:80']  # For containerized app
     scrape_interval: 5s
     metrics_path: '/metrics'
+    honor_labels: true
     
   # If you want to scrape from other services
   - job_name: 'jaeger'
