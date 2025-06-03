@@ -2,6 +2,7 @@
 @{
     ViewBag.Title = "Review Article";
     var userRoles = (IList<string>)ViewBag.UserRoles;
+    var availableActions = (List<MvcWeb.Models.ArticleAction>)ViewBag.AvailableActions;
     
     bool IsEditor = userRoles.Contains("Editor") || userRoles.Contains("SysAdmin");
     bool IsApprover = userRoles.Contains("Approver") || userRoles.Contains("SysAdmin");
@@ -21,16 +22,11 @@
             <div class="card mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h4 class="mb-0">Article Preview</h4>
-                    <span class="badge @(Model.Status switch {
-                                            MvcWeb.Models.ArticleStatus.Draft => "bg-secondary",
-                                            MvcWeb.Models.ArticleStatus.InReview => "bg-info",
-                                            MvcWeb.Models.ArticleStatus.Rejected => "bg-danger",
-                                            MvcWeb.Models.ArticleStatus.Approved => "bg-warning",
-                                            MvcWeb.Models.ArticleStatus.Published => "bg-success",
-                                            MvcWeb.Models.ArticleStatus.Archived => "bg-dark",
-                                            _ => "bg-secondary"
-                                        })">
-                        @Model.Status.ToString()
+                    @{
+                        var workflowItem = new MvcWeb.Models.WorkflowItem { WorkflowState = Model.WorkflowState };
+                    }
+                    <span class="badge @workflowItem.GetStatusBadgeClass()">
+                        @workflowItem.GetDisplayStatus()
                     </span>
                 </div>
                 <div class="card-body">
@@ -85,7 +81,7 @@
                 <div class="card-body">
                     <dl>
                         <dt>Status</dt>
-                        <dd>@Model.Status.ToString()</dd>
+                        <dd>@workflowItem.GetDisplayStatus()</dd>
                         
                         <dt>Author</dt>
                         <dd>@Model.Submission.Author</dd>
@@ -131,65 +127,88 @@
                     <h5 class="mb-0">Actions</h5>
                 </div>
                 <div class="card-body">
-                    <form method="post">
-                        @if (Model.Status == MvcWeb.Models.ArticleStatus.Draft && IsEditor)
-                        {
-                            <div class="mb-3">
-                                <label for="feedback" class="form-label">Feedback for Author</label>
-                                <textarea name="feedback" id="feedback" class="form-control" rows="3"></textarea>
-                            </div>
+                    @if (availableActions?.Any() == true)
+                    {
+                        <form method="post">
+                            @* Show feedback textarea if any action requires a comment *@
+                            @if (availableActions.Any(a => a.RequiresComment))
+                            {
+                                <div class="mb-3">
+                                    <label for="feedback" class="form-label">
+                                        Feedback for Author
+                                        @if (availableActions.Any(a => a.RequiresComment))
+                                        {
+                                            <span class="text-danger">*</span>
+                                        }
+                                    </label>
+                                    <textarea name="feedback" id="feedback" class="form-control" rows="3" 
+                                              @(availableActions.Any(a => a.RequiresComment) ? "required" : "")></textarea>
+                                    <div class="form-text">
+                                        @if (availableActions.Any(a => a.RequiresComment))
+                                        {
+                                            <span class="text-muted">* Required for: @string.Join(", ", availableActions.Where(a => a.RequiresComment).Select(a => a.Name))</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            else if (availableActions.Any())
+                            {
+                                <div class="mb-3">
+                                    <label for="feedback" class="form-label">Feedback for Author (Optional)</label>
+                                    <textarea name="feedback" id="feedback" class="form-control" rows="3"></textarea>
+                                </div>
+                            }
                             
                             <div class="d-grid gap-2">
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.InReview" class="btn btn-success">
-                                    <i class="fas fa-check"></i> Approve for Review
-                                </button>
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.Rejected" class="btn btn-danger">
-                                    <i class="fas fa-times"></i> Reject
-                                </button>
+                                @foreach (var action in availableActions)
+                                {
+                                    <button type="submit" 
+                                            name="targetState" 
+                                            value="@action.TargetState" 
+                                            class="btn @action.CssClass"
+                                            @(action.RequiresComment ? "data-requires-comment=\"true\"" : "")
+                                            @(action.IsWorkflowTransition ? "data-is-workflow=\"true\"" : "")>
+                                        <i class="@action.Icon"></i> @action.Name
+                                        @if (action.IsWorkflowTransition)
+                                        {
+                                            <small class="d-block text-muted">Workflow Transition</small>
+                                        }
+                                    </button>
+                                }
                             </div>
-                        }
+                        </form>
                         
-                        @if (Model.Status == MvcWeb.Models.ArticleStatus.InReview && IsApprover)
-                        {
-                            <div class="mb-3">
-                                <label for="feedback" class="form-label">Feedback for Author</label>
-                                <textarea name="feedback" id="feedback" class="form-control" rows="3"></textarea>
-                            </div>
-                            
-                            <div class="d-grid gap-2">
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.Approved" class="btn btn-success">
-                                    <i class="fas fa-check"></i> Approve
-                                </button>
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.Rejected" class="btn btn-danger">
-                                    <i class="fas fa-times"></i> Reject
-                                </button>
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.Draft" class="btn btn-secondary">
-                                    <i class="fas fa-undo"></i> Send Back to Draft
-                                </button>
-                            </div>
-                        }
-                        
-                        @if (Model.Status == MvcWeb.Models.ArticleStatus.Approved && IsApprover)
-                        {
-                            <div class="d-grid gap-2">
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.Published" class="btn btn-primary">
-                                    <i class="fas fa-globe"></i> Publish
-                                </button>
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.InReview" class="btn btn-secondary">
-                                    <i class="fas fa-undo"></i> Send Back to Review
-                                </button>
-                            </div>
-                        }
-                        
-                        @if (Model.Status == MvcWeb.Models.ArticleStatus.Published && IsApprover)
-                        {
-                            <div class="d-grid gap-2">
-                                <button type="submit" name="status" value="@MvcWeb.Models.ArticleStatus.Archived" class="btn btn-secondary">
-                                    <i class="fas fa-archive"></i> Archive
-                                </button>
-                            </div>
-                        }
-                    </form>
+                        @* Add JavaScript for client-side validation of required comments *@
+                        <script>
+                            document.addEventListener('DOMContentLoaded', function() {
+                                const form = document.querySelector('form');
+                                const feedbackTextarea = document.getElementById('feedback');
+                                
+                                form.addEventListener('submit', function(e) {
+                                    const button = e.submitter;
+                                    const requiresComment = button.getAttribute('data-requires-comment') === 'true';
+                                    
+                                    if (requiresComment && (!feedbackTextarea.value || feedbackTextarea.value.trim() === '')) {
+                                        e.preventDefault();
+                                        alert('This action requires feedback. Please provide a comment before proceeding.');
+                                        feedbackTextarea.focus();
+                                        return false;
+                                    }
+                                });
+                            });
+                        </script>
+                    }
+                    else
+                    {
+                        <div class="text-muted text-center py-3">
+                            <i class="fas fa-info-circle"></i>
+                            <p class="mb-0 mt-2">No actions available for this article in its current state.</p>
+                            @if (!IsEditor && !IsApprover)
+                            {
+                                <small class="text-muted">You may not have the necessary permissions to perform actions on this article.</small>
+                            }
+                        </div>
+                    }
                 </div>
             </div>
         </div>

@@ -128,6 +128,16 @@ namespace MvcWeb.Models
         public string ApprovedById { get; set; }
 
         /// <summary>
+        /// Gets/sets the user ID of who submitted this article.
+        /// </summary>
+        public string SubmittedById { get; set; }
+
+        /// <summary>
+        /// Gets/sets the current workflow state of the article.
+        /// </summary>
+        public string WorkflowState { get; set; }
+
+        /// <summary>
         /// Gets/sets the blog id this article belongs to.
         /// </summary>
         public Guid BlogId { get; set; }
@@ -136,5 +146,41 @@ namespace MvcWeb.Models
         /// Gets/sets the optional post id if this article was published.
         /// </summary>
         public Guid? PostId { get; set; }
+    }
+
+    /// <summary>
+    /// Represents an available action for an article
+    /// </summary>
+    public class ArticleAction
+    {
+        /// <summary>
+        /// Gets/sets the display name of the action.
+        /// </summary>
+        public string Name { get; set; }
+
+        /// <summary>
+        /// Gets/sets the icon class for the action button.
+        /// </summary>
+        public string Icon { get; set; }
+
+        /// <summary>
+        /// Gets/sets the CSS class for the action button.
+        /// </summary>
+        public string CssClass { get; set; }
+
+        /// <summary>
+        /// Gets/sets the target workflow state this action will transition to.
+        /// </summary>
+        public string TargetState { get; set; }
+
+        /// <summary>
+        /// Gets/sets whether this action requires a comment.
+        /// </summary>
+        public bool RequiresComment { get; set; }
+
+        /// <summary>
+        /// Gets/sets whether this action uses the Piranha workflow transition system.
+        /// </summary>
+        public bool IsWorkflowTransition { get; set; }
     }
 }

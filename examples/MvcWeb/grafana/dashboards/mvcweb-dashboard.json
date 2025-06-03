@@ -103,7 +103,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(http_request_duration_seconds_count{job=\"mvcweb\"}[5m])",
+          "expr": "rate(http_requests_total{job=\"mvcweb\"}[5m])",
           "legendFormat": "{{method}} {{route}}",
           "refId": "A"
         }
@@ -169,7 +169,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"mvcweb\"}[5m])) * 1000",
+          "expr": "histogram_quantile(0.95, rate(http_request_duration_ms_bucket{job=\"mvcweb\"}[5m]))",
           "legendFormat": "95th percentile",
           "refId": "A"
         }
@@ -434,7 +434,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, rate(database_query_duration_ms_bucket[5m]))",
+          "expr": "histogram_quantile(0.95, rate(http_request_duration_ms_bucket{job=\"mvcweb\"}[5m]))",
           "legendFormat": "95th percentile",
           "refId": "A"
         },
@@ -443,12 +443,12 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.50, rate(database_query_duration_ms_bucket[5m]))",
+          "expr": "histogram_quantile(0.50, rate(http_request_duration_ms_bucket{job=\"mvcweb\"}[5m]))",
           "legendFormat": "50th percentile",
           "refId": "B"
         }
       ],
-      "title": "Database Query Duration",
+      "title": "HTTP Request Duration Percentiles",
       "type": "timeseries"
     },
     {
@@ -657,7 +657,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(post_creations_total)",
+          "expr": "sum(content_creation_total{job=\"mvcweb\"})",
           "legendFormat": "Total Posts Created",
           "refId": "A"
         }
@@ -720,7 +720,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(repository_operations_total{status=\"error\"}[5m])) * 60",
+          "expr": "sum(rate(errors_total{job=\"mvcweb\"}[5m])) * 60",
           "legendFormat": "Errors per minute",
           "refId": "A"
         }
@@ -788,13 +788,189 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(sum(rate(http_request_duration_seconds_count{job=\"mvcweb\",code!~\"5..\"}[5m])) / sum(rate(http_request_duration_seconds_count{job=\"mvcweb\"}[5m]))) * 100",
+          "expr": "(sum(rate(http_requests_total{job=\"mvcweb\",status_code!~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"mvcweb\"}[5m]))) * 100",
           "legendFormat": "Success Rate",
           "refId": "A"
         }
       ],
       "title": "HTTP Success Rate",
       "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "vis": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "id": 11,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "10.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(page_views_total{job=\"mvcweb\"}[5m])",
+          "legendFormat": "{{page_type}} - {{user_role}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Page Views Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "vis": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "id": 12,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "10.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(user_actions_total{job=\"mvcweb\"}[5m])",
+          "legendFormat": "{{action_type}} - {{category}}",
+          "refId": "A"
+        }
+      ],
+      "title": "User Actions Rate",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",

@@ -325,7 +325,7 @@ internal class WorkflowRepository : IWorkflowRepository
             ToStateKey = entity.ToStateKey,
             Name = entity.Name,
             Description = entity.Description,
-            RequiredPermission = entity.RequiredPermission,
+            RequiredRoleId = entity.RequiredRoleId,
             CssClass = entity.CssClass,
             Icon = entity.Icon,
             SortOrder = entity.SortOrder,
@@ -350,46 +350,104 @@ internal class WorkflowRepository : IWorkflowRepository
         entity.InitialState = model.InitialState;
         entity.LastModified = DateTime.Now;
 
-        // Update states
-        entity.States.Clear();
+        // Update states - proper handling to avoid concurrency issues
+        var existingStateIds = entity.States.Select(s => s.Id).ToList();
+        var modelStateIds = model.States.Where(s => s.Id != Guid.Empty).Select(s => s.Id).ToList();
+        
+        // Remove states that are no longer in the model
+        var statesToRemove = entity.States.Where(s => !modelStateIds.Contains(s.Id)).ToList();
+        foreach (var state in statesToRemove)
+        {
+            entity.States.Remove(state);
+        }
+        
+        // Update or add states
         foreach (var state in model.States)
         {
-            entity.States.Add(new WorkflowState
+            var existingState = entity.States.FirstOrDefault(s => s.Id == state.Id);
+            if (existingState != null)
             {
-                Id = state.Id != Guid.Empty ? state.Id : Guid.NewGuid(),
-                WorkflowDefinitionId = entity.Id,
-                Key = state.Key,
-                Name = state.Name,
-                Description = state.Description,
-                Color = state.Color,
-                Icon = state.Icon,
-                SortOrder = state.SortOrder,
-                IsPublished = state.IsPublished,
-                IsInitial = state.IsInitial,
-                IsFinal = state.IsFinal
-            });
+                // Update existing state
+                existingState.Key = state.Key;
+                existingState.Name = state.Name;
+                existingState.Description = state.Description;
+                existingState.Color = state.Color;
+                existingState.Icon = state.Icon;
+                existingState.SortOrder = state.SortOrder;
+                existingState.IsPublished = state.IsPublished;
+                existingState.IsInitial = state.IsInitial;
+                existingState.IsFinal = state.IsFinal;
+            }
+            else
+            {
+                // Add new state
+                entity.States.Add(new WorkflowState
+                {
+                    Id = state.Id != Guid.Empty ? state.Id : Guid.NewGuid(),
+                    WorkflowDefinitionId = entity.Id,
+                    Key = state.Key,
+                    Name = state.Name,
+                    Description = state.Description,
+                    Color = state.Color,
+                    Icon = state.Icon,
+                    SortOrder = state.SortOrder,
+                    IsPublished = state.IsPublished,
+                    IsInitial = state.IsInitial,
+                    IsFinal = state.IsFinal
+                });
+            }
         }
 
-        // Update transitions
-        entity.Transitions.Clear();
+        // Update transitions - proper handling to avoid concurrency issues
+        var existingTransitionIds = entity.Transitions.Select(t => t.Id).ToList();
+        var modelTransitionIds = model.Transitions.Where(t => t.Id != Guid.Empty).Select(t => t.Id).ToList();
+        
+        // Remove transitions that are no longer in the model
+        var transitionsToRemove = entity.Transitions.Where(t => !modelTransitionIds.Contains(t.Id)).ToList();
+        foreach (var transition in transitionsToRemove)
+        {
+            entity.Transitions.Remove(transition);
+        }
+        
+        // Update or add transitions
         foreach (var transition in model.Transitions)
         {
-            entity.Transitions.Add(new WorkflowTransition
+            var existingTransition = entity.Transitions.FirstOrDefault(t => t.Id == transition.Id);
+            if (existingTransition != null)
             {
-                Id = transition.Id != Guid.Empty ? transition.Id : Guid.NewGuid(),
-                WorkflowDefinitionId = entity.Id,
-                FromStateKey = transition.FromStateKey,
-                ToStateKey = transition.ToStateKey,
-                Name = transition.Name,
-                Description = transition.Description,
-                RequiredPermission = transition.RequiredPermission,
-                CssClass = transition.CssClass,
-                Icon = transition.Icon,
-                SortOrder = transition.SortOrder,
-                RequiresComment = transition.RequiresComment,
-                SendNotification = transition.SendNotification,
-                NotificationTemplate = transition.NotificationTemplate
-            });
+                // Update existing transition
+                existingTransition.FromStateKey = transition.FromStateKey;
+                existingTransition.ToStateKey = transition.ToStateKey;
+                existingTransition.Name = transition.Name;
+                existingTransition.Description = transition.Description;
+                existingTransition.RequiredRoleId = transition.RequiredRoleId;
+                existingTransition.CssClass = transition.CssClass;
+                existingTransition.Icon = transition.Icon;
+                existingTransition.SortOrder = transition.SortOrder;
+                existingTransition.RequiresComment = transition.RequiresComment;
+                existingTransition.SendNotification = transition.SendNotification;
+                existingTransition.NotificationTemplate = transition.NotificationTemplate;
+            }
+            else
+            {
+                // Add new transition
+                entity.Transitions.Add(new WorkflowTransition
+                {
+                    Id = transition.Id != Guid.Empty ? transition.Id : Guid.NewGuid(),
+                    WorkflowDefinitionId = entity.Id,
+                    FromStateKey = transition.FromStateKey,
+                    ToStateKey = transition.ToStateKey,
+                    Name = transition.Name,
+                    Description = transition.Description,
+                    RequiredRoleId = transition.RequiredRoleId,
+                    CssClass = transition.CssClass,
+                    Icon = transition.Icon,
+                    SortOrder = transition.SortOrder,
+                    RequiresComment = transition.RequiresComment,
+                    SendNotification = transition.SendNotification,
+                    NotificationTemplate = transition.NotificationTemplate
+                });
+            }
         }
     }
 
@@ -422,7 +480,7 @@ internal class WorkflowRepository : IWorkflowRepository
         entity.ToStateKey = model.ToStateKey;
         entity.Name = model.Name;
         entity.Description = model.Description;
-        entity.RequiredPermission = model.RequiredPermission;
+        entity.RequiredRoleId = model.RequiredRoleId;
         entity.CssClass = model.CssClass;
         entity.Icon = model.Icon;
         entity.SortOrder = model.SortOrder;

@@ -76,9 +76,9 @@ public interface IWorkflowDefinitionService
     /// </summary>
     /// <param name="contentType">The content type</param>
     /// <param name="currentState">The current state</param>
-    /// <param name="permissions">The user permissions</param>
+    /// <param name="userRoles">The user roles</param>
     /// <returns>The available transitions</returns>
-    Task<IEnumerable<WorkflowTransition>> GetAvailableTransitionsAsync(string contentType, string currentState, IEnumerable<string> permissions);
+    Task<IEnumerable<WorkflowTransition>> GetAvailableTransitionsAsync(string contentType, string currentState, IEnumerable<Guid> userRoles = null);
 
     /// <summary>
     /// Performs a workflow transition validation.
@@ -86,7 +86,7 @@ public interface IWorkflowDefinitionService
     /// <param name="contentType">The content type</param>
     /// <param name="fromState">The from state</param>
     /// <param name="toState">The to state</param>
-    /// <param name="permissions">The user permissions</param>
+    /// <param name="userRoles">The user roles</param>
     /// <returns>True if the transition is valid</returns>
-    Task<bool> ValidateTransitionAsync(string contentType, string fromState, string toState, IEnumerable<string> permissions);
+    Task<bool> ValidateTransitionAsync(string contentType, string fromState, string toState, IEnumerable<Guid> userRoles = null);
 }

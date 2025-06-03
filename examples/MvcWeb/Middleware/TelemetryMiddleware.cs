@@ -24,8 +24,23 @@ namespace MvcWeb.Middleware
             var path = context.Request.Path.Value ?? "/";
             var method = context.Request.Method;
             
+            // Generate or extract correlation ID for request tracing
+            var correlationId = context.Request.Headers["X-Correlation-ID"].FirstOrDefault() 
+                               ?? context.TraceIdentifier 
+                               ?? Guid.NewGuid().ToString("N")[..8];
+            
+            // Add correlation ID to response headers
+            context.Response.Headers["X-Correlation-ID"] = correlationId;
+            
             // Sanitize path to remove potential PII
             var sanitizedPath = SanitizePath(path);
+            
+            // Start a custom activity for detailed tracing
+            using var activity = MetricsService.StartActivity($"HTTP {method} {sanitizedPath}");
+            activity?.SetTag("http.method", method);
+            activity?.SetTag("http.url", sanitizedPath);
+            activity?.SetTag("correlation.id", correlationId);
+            activity?.SetTag("user.role", context.User?.Identity?.IsAuthenticated == true ? "authenticated" : "anonymous");
             
             try
             {
@@ -54,27 +69,38 @@ namespace MvcWeb.Middleware
                 var statusCode = context.Response.StatusCode;
                 var duration = stopwatch.ElapsedMilliseconds;
 
+                // Add tracing information to activity
+                activity?.SetTag("http.status_code", statusCode);
+                activity?.SetTag("http.response_time_ms", duration);
+                activity?.SetStatus(statusCode >= 400 ? ActivityStatusCode.Error : ActivityStatusCode.Ok);
+
                 // Record comprehensive HTTP metrics
                 MetricsService.RecordHttpRequest(method, sanitizedPath, statusCode, duration);
 
                 // Record additional telemetry
-                RecordAdditionalMetrics(context, sanitizedPath, userAgentCategory, referrerDomain, statusCode, duration);
+                RecordAdditionalMetrics(context, sanitizedPath, userAgentCategory, referrerDomain, statusCode, duration, correlationId);
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
                 
+                // Add exception information to tracing
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                activity?.SetTag("exception.type", ex.GetType().Name);
+                activity?.SetTag("exception.message", ex.Message);
+                
                 // Record error metrics
                 MetricsService.RecordHttpRequest(method, sanitizedPath, 500, stopwatch.ElapsedMilliseconds);
                 MetricsService.RecordError("middleware_exception", "error", "TelemetryMiddleware");
                 
-                _logger.LogError(ex, "Error in telemetry middleware for {Method} {Path}", method, sanitizedPath);
+                _logger.LogError(ex, "Error in telemetry middleware for {Method} {Path} [CorrelationId: {CorrelationId}]", 
+                    method, sanitizedPath, correlationId);
                 throw;
             }
         }
 
         private void RecordAdditionalMetrics(HttpContext context, string sanitizedPath, string userAgentCategory, 
-            string referrerDomain, int statusCode, double duration)
+            string referrerDomain, int statusCode, double duration, string correlationId)
         {
             var userRole = context.User?.Identity?.IsAuthenticated == true ? "authenticated" : "anonymous";
             

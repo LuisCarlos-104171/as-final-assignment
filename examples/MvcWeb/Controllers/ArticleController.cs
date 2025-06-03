@@ -6,9 +6,14 @@ using MvcWeb.Services;
 using Piranha;
 using Piranha.AspNetCore.Identity.Data;
 using Piranha.Models;
+using Piranha.Manager.Models;
+using Piranha.Manager.Services;
+using Piranha.Services;
 using System.Security.Claims;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 
 namespace MvcWeb.Controllers
 {
@@ -19,6 +24,9 @@ namespace MvcWeb.Controllers
         private readonly ILogger<ArticleController> _logger;
         private readonly ArticleSubmissionRepository _repository;
         private readonly UserManager<User> _userManager;
+        private readonly RoleManager<Role> _roleManager;
+        private readonly WorkflowService _workflowService;
+        private readonly IWorkflowDefinitionService _workflowDefinitionService;
         
         private static readonly ActivitySource ActivitySource = new("MvcWeb.ArticleController");
         private static readonly Meter Meter = new("MvcWeb.ArticleController");
@@ -32,12 +40,18 @@ namespace MvcWeb.Controllers
         public ArticleController(IApi api, 
             ILogger<ArticleController> logger, 
             ArticleSubmissionRepository repository,
-            UserManager<User> userManager)
+            UserManager<User> userManager,
+            RoleManager<Role> roleManager,
+            WorkflowService workflowService,
+            IWorkflowDefinitionService workflowDefinitionService)
         {
             _api = api;
             _logger = logger;
             _repository = repository;
             _userManager = userManager;
+            _roleManager = roleManager;
+            _workflowService = workflowService;
+            _workflowDefinitionService = workflowDefinitionService;
         }
 
         /// <summary>
@@ -71,18 +85,25 @@ namespace MvcWeb.Controllers
         [Authorize]
         public async Task<IActionResult> Submit(ArticleSubmissionModel model, Guid blogId)
         {
-            using var activity = ActivitySource.StartActivity("ArticleController.Submit");
+            using var activity = MetricsService.StartBusinessActivity("Article Submission", "ArticleController");
             var stopwatch = Stopwatch.StartNew();
             
-            activity?.SetTag("blogId", blogId.ToString());
-            activity?.SetTag("userId", User.Identity?.Name ?? "unknown");
+            activity?.SetTag("blog.id", blogId.ToString());
+            activity?.SetTag("user.name", User.Identity?.Name ?? "unknown");
+            activity?.SetTag("article.title_length", model.Title?.Length ?? 0);
+            activity?.SetTag("article.content_length", model.Content?.Length ?? 0);
             
             if (ModelState.IsValid)
             {
                 try
                 {
-                    // Add the submission
-                    var submission = await _repository.AddSubmissionAsync(model, blogId);
+                    // Get the current user ID
+                    var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                    
+                    // Add the submission with database activity tracing
+                    using var dbActivity = MetricsService.StartDatabaseActivity("Create Article Submission", "SubmittedArticles");
+                    var submission = await _repository.AddSubmissionAsync(model, blogId, userId);
+                    dbActivity?.SetTag("submission.id", submission.Id.ToString());
                     
                     stopwatch.Stop();
                     
@@ -96,9 +117,11 @@ namespace MvcWeb.Controllers
                     MetricsService.RecordHttpRequest("POST", "/article/submit", 302, stopwatch.ElapsedMilliseconds);
                     MetricsService.RecordUserAction("article_submission_success", "content");
                     MetricsService.RecordWorkflowTransition("new", "draft", "article_workflow");
+                    MetricsService.RecordArticleSubmission("success");
                     
-                    activity?.SetTag("submissionId", submission.Id.ToString());
-                    activity?.SetTag("outcome", "success");
+                    activity?.SetTag("submission.id", submission.Id.ToString());
+                    activity?.SetTag("operation.outcome", "success");
+                    activity?.SetTag("operation.duration_ms", stopwatch.ElapsedMilliseconds);
                     
                     _logger.LogInformation("Article submitted successfully with ID {SubmissionId} by user {UserId}", 
                         submission.Id, User.Identity?.Name);
@@ -135,6 +158,211 @@ namespace MvcWeb.Controllers
         }
 
         /// <summary>
+        /// Debug endpoint to manually publish a post
+        /// </summary>
+        [Route("debug/publish/{postId:Guid}")]
+        public async Task<IActionResult> DebugPublish(Guid postId)
+        {
+            try
+            {
+                var post = await _api.Posts.GetByIdAsync(postId);
+                if (post == null)
+                {
+                    return NotFound($"Post {postId} not found");
+                }
+
+                post.Published = DateTime.Now;
+                await _api.Posts.SaveAsync(post);
+
+                return Json(new { 
+                    success = true, 
+                    message = $"Post '{post.Title}' published at {post.Published}",
+                    postId = post.Id,
+                    title = post.Title,
+                    published = post.Published
+                });
+            }
+            catch (Exception ex)
+            {
+                return Json(new { 
+                    success = false, 
+                    error = ex.Message 
+                });
+            }
+        }
+
+        /// <summary>
+        /// Debug endpoint to check workflow transitions for an article
+        /// </summary>
+        [Route("debug/workflow/{articleId:Guid}")]
+        public async Task<IActionResult> DebugWorkflow(Guid articleId)
+        {
+            try
+            {
+                var article = await _repository.GetSubmissionByIdAsync(articleId);
+                if (article == null)
+                {
+                    return NotFound($"Article {articleId} not found");
+                }
+
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                var user = await _userManager.FindByIdAsync(userId);
+                var roles = await _userManager.GetRolesAsync(user);
+                
+                var availableActions = await GetAvailableActionsAsync(article, roles, userId);
+
+                return Json(new {
+                    articleId = article.Id,
+                    title = article.Submission.Title,
+                    currentWorkflowState = article.WorkflowState,
+                    currentStatus = article.Status.ToString(),
+                    postId = article.PostId,
+                    userRoles = roles,
+                    availableActions = availableActions.Select(a => new {
+                        name = a.Name,
+                        targetState = a.TargetState,
+                        requiresComment = a.RequiresComment,
+                        cssClass = a.CssClass
+                    })
+                });
+            }
+            catch (Exception ex)
+            {
+                return Json(new { 
+                    success = false, 
+                    error = ex.Message 
+                });
+            }
+        }
+
+        /// <summary>
+        /// Debug endpoint to check submitted articles and their posts
+        /// </summary>
+        [Route("debug/articles")]
+        public async Task<IActionResult> DebugArticles()
+        {
+            try
+            {
+                var allArticles = await _repository.GetSubmissionsAsync();
+                var result = new List<object>();
+
+                foreach (var article in allArticles)
+                {
+                    object postData = null;
+
+                    if (article.PostId.HasValue)
+                    {
+                        var post = await _api.Posts.GetByIdAsync(article.PostId.Value);
+                        if (post != null)
+                        {
+                            postData = new {
+                                id = post.Id,
+                                title = post.Title,
+                                published = post.Published,
+                                slug = post.Slug,
+                                url = post.Permalink
+                            };
+                        }
+                    }
+
+                    result.Add(new {
+                        articleId = article.Id,
+                        title = article.Submission.Title,
+                        workflowState = article.WorkflowState,
+                        status = article.Status.ToString(),
+                        postId = article.PostId,
+                        submittedById = article.SubmittedById,
+                        post = postData
+                    });
+                }
+
+                return Json(result);
+            }
+            catch (Exception ex)
+            {
+                return Json(new { 
+                    success = false, 
+                    error = ex.Message 
+                });
+            }
+        }
+
+        /// <summary>
+        /// Debug endpoint to check all posts
+        /// </summary>
+        [Route("debug/posts")]
+        public async Task<IActionResult> DebugPosts()
+        {
+            var allPosts = await _api.Posts.GetAllBySiteIdAsync();
+            var result = allPosts.Select(p => new {
+                p.Id,
+                p.Title,
+                p.Slug,
+                p.Published,
+                p.BlogId,
+                p.Category,
+                ContentType = "post",
+                Url = p.Permalink
+            }).ToList();
+            
+            return Json(result);
+        }
+
+        /// <summary>
+        /// Debug endpoint to check workflow definitions and transitions
+        /// </summary>
+        [Route("debug/workflow-definition")]
+        public async Task<IActionResult> DebugWorkflowDefinition()
+        {
+            try
+            {
+                var workflow = await _workflowDefinitionService.GetDefaultByContentTypeAsync("post");
+                if (workflow == null)
+                {
+                    return Json(new { success = false, error = "No default workflow found for post content type" });
+                }
+
+                var result = new {
+                    workflowId = workflow.Id,
+                    workflowName = workflow.Name,
+                    contentTypes = workflow.ContentTypes,
+                    isDefault = workflow.IsDefault,
+                    isActive = workflow.IsActive,
+                    initialState = workflow.InitialState,
+                    states = workflow.States?.Select(s => new {
+                        key = s.Key,
+                        name = s.Name,
+                        color = s.Color,
+                        icon = s.Icon,
+                        isInitial = s.IsInitial,
+                        isPublished = s.IsPublished,
+                        isFinal = s.IsFinal,
+                        sortOrder = s.SortOrder
+                    }).ToList(),
+                    transitions = workflow.Transitions?.Select(t => new {
+                        id = t.Id,
+                        fromState = t.FromStateKey,
+                        toState = t.ToStateKey,
+                        name = t.Name,
+                        description = t.Description,
+                        requiredRoleId = t.RequiredRoleId,
+                        cssClass = t.CssClass,
+                        icon = t.Icon,
+                        requiresComment = t.RequiresComment,
+                        sendNotification = t.SendNotification,
+                        sortOrder = t.SortOrder
+                    }).ToList()
+                };
+
+                return Json(result);
+            }
+            catch (Exception ex)
+            {
+                return Json(new { success = false, error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Shows a thank you page after submission.
         /// </summary>
         [Route("thank-you/{id:Guid}")]
@@ -151,65 +379,337 @@ namespace MvcWeb.Controllers
         }
 
         /// <summary>
-        /// Lists articles in the workflow.
+        /// Lists articles and posts in the workflow that the user can modify.
         /// </summary>
         [Authorize]
         [Route("workflow")]
         public async Task<IActionResult> Workflow()
         {
-            // We need to fetch different articles based on the user's role
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             
             if (string.IsNullOrEmpty(userId))
             {
-                return Challenge(); // Redirect to login if userId is null
+                return Challenge();
             }
             
             var user = await _userManager.FindByIdAsync(userId);
-            
             if (user == null)
             {
                 _logger.LogWarning("User with ID {UserId} not found", userId);
-                return Challenge(); // Redirect to login if user not found
+                return Challenge();
+            }
+            
+            var roles = await _userManager.GetRolesAsync(user);
+            var userRoleIds = await GetUserRoleIdsAsync(userId);
+            
+            // Validate workflow exists
+            await ValidateWorkflowExistsAsync();
+            
+            var workflowItems = new List<WorkflowItem>();
+            
+            try
+            {
+                // Get ALL submitted articles and filter by workflow permissions
+                List<SubmittedArticle> allArticles;
+                
+                if (roles.Contains("SysAdmin"))
+                {
+                    allArticles = await _repository.GetSubmissionsAsync();
+                }
+                else if (roles.Contains("Writer"))
+                {
+                    // Writers see their own articles
+                    allArticles = await _repository.GetSubmissionsAsync(null, userId);
+                }
+                else
+                {
+                    // Editors and Approvers see all articles (we'll filter by available actions)
+                    allArticles = await _repository.GetSubmissionsAsync();
+                }
+                
+                // Convert submitted articles to workflow items and filter by available actions
+                foreach (var article in allArticles)
+                {
+                    var availableActions = await GetAvailableActionsAsync(article, roles, userId);
+                    
+                    var isPublished = await IsWorkflowStatePublishedAsync(article.WorkflowState);
+                    bool isOwner = article.SubmittedById == userId;
+                    
+                    // Only include articles that:
+                    // 1. Are NOT published, AND
+                    // 2. Have available actions for the current user (OR user is SysAdmin)
+                    bool shouldInclude = !isPublished && (availableActions.Any() || roles.Contains("SysAdmin"));
+                    
+                    _logger.LogInformation("Article {ArticleId} ({Title}) - WorkflowState: {WorkflowState}, IsPublished: {IsPublished}, PostId: {PostId}, Actions: {ActionCount}, ShouldInclude: {ShouldInclude}", 
+                        article.Id, article.Submission.Title, article.WorkflowState, isPublished, article.PostId, availableActions.Count, shouldInclude);
+                    
+                    if (shouldInclude)
+                    {
+                        workflowItems.Add(new WorkflowItem
+                        {
+                            Id = article.Id,
+                            Title = article.Submission.Title,
+                            Author = article.Submission.Author,
+                            Created = article.Created,
+                            LastModified = article.LastModified,
+                            WorkflowState = article.WorkflowState ?? "draft",
+                            ContentType = "post",
+                            BlogId = article.BlogId,
+                            IsPublished = isPublished,
+                            SubmittedArticle = article,
+                            AvailableActions = availableActions
+                        });
+                    }
+                }
+                
+                // Get all Piranha posts and filter by what the user can modify
+                var allPosts = await _api.Posts.GetAllBySiteIdAsync();
+                
+                foreach (var post in allPosts)
+                {
+                    // Check if user has any available transitions for this post
+                    var currentState = !string.IsNullOrEmpty(post.WorkflowState) ? post.WorkflowState : "draft";
+                    var availableTransitions = await _workflowDefinitionService.GetAvailableTransitionsAsync("post", currentState, userRoleIds);
+                    
+                    var availableActions = new List<ArticleAction>();
+                    
+                    // Convert workflow transitions to article actions
+                    foreach (var transition in availableTransitions)
+                    {
+                        var action = CreateActionFromTransition(transition, transition.ToStateKey);
+                        if (action != null)
+                        {
+                            availableActions.Add(action);
+                        }
+                    }
+                    
+                    // Only include posts that:
+                    // 1. Are NOT published, AND
+                    // 2. Have available actions for the current user (OR user is SysAdmin)
+                    bool postIsPublished = post.Published.HasValue;
+                    bool postShouldInclude = !postIsPublished && (availableActions.Any() || roles.Contains("SysAdmin"));
+                    
+                    if (postShouldInclude)
+                    {
+                        workflowItems.Add(new WorkflowItem
+                        {
+                            Id = post.Id,
+                            Title = post.Title,
+                            Author = "System", // Posts don't have an author field like articles
+                            Created = post.Created,
+                            LastModified = post.LastModified,
+                            WorkflowState = currentState,
+                            ContentType = "post",
+                            BlogId = post.BlogId,
+                            IsPublished = postIsPublished,
+                            Post = post,
+                            AvailableActions = availableActions
+                        });
+                    }
+                }
+                
+                // Sort by last modified descending
+                workflowItems = workflowItems.OrderByDescending(w => w.LastModified).ToList();
+                
+                _logger.LogInformation("Found {ArticleCount} articles and {PostCount} posts for user {UserId} with roles {UserRoles}", 
+                    workflowItems.Count(w => w.ContentType == "post" && w.SubmittedArticle != null), workflowItems.Count(w => w.ContentType == "post"), userId, string.Join(", ", roles));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading workflow items for user {UserId}", userId);
+                ViewBag.ErrorMessage = "An error occurred while loading workflow items.";
+            }
+            
+            ViewBag.UserRoles = roles;
+            
+            // Record submission view metrics for Grafana dashboard
+            foreach (var item in workflowItems.Where(w => w.SubmittedArticle != null))
+            {
+                MetricsService.RecordSubmissionView(item.WorkflowState);
+            }
+            
+            return View(workflowItems);
+        }
+
+        /// <summary>
+        /// Shows a specific post for review using workflow.
+        /// </summary>
+        [Authorize]
+        [Route("review-post/{id:Guid}")]
+        public async Task<IActionResult> ReviewPost(Guid id)
+        {
+            var post = await _api.Posts.GetByIdAsync(id);
+            
+            if (post == null)
+            {
+                return NotFound();
+            }
+            
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Challenge();
+            }
+            
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
+            {
+                _logger.LogWarning("User with ID {UserId} not found", userId);
+                return Challenge();
+            }
+            
+            var roles = await _userManager.GetRolesAsync(user);
+            var userRoleIds = await GetUserRoleIdsAsync(userId);
+            
+            // Check if user has any transitions available for this post
+            var currentState = !string.IsNullOrEmpty(post.WorkflowState) ? post.WorkflowState : "draft";
+            var availableTransitions = await _workflowDefinitionService.GetAvailableTransitionsAsync("post", currentState, userRoleIds);
+            
+            if (!availableTransitions.Any() && !roles.Contains("SysAdmin"))
+            {
+                return Forbid();
+            }
+            
+            // Convert to WorkflowItem for consistent view model
+            var workflowItem = new WorkflowItem
+            {
+                Id = post.Id,
+                Title = post.Title,
+                Author = "System",
+                Created = post.Created,
+                LastModified = post.LastModified,
+                WorkflowState = currentState,
+                ContentType = "post",
+                BlogId = post.BlogId,
+                IsPublished = post.Published.HasValue,
+                Post = post
+            };
+            
+            // Get available actions
+            var availableActions = new List<ArticleAction>();
+            foreach (var transition in availableTransitions)
+            {
+                var action = CreateActionFromTransition(transition, transition.ToStateKey);
+                if (action != null)
+                {
+                    availableActions.Add(action);
+                }
+            }
+            workflowItem.AvailableActions = availableActions;
+            
+            ViewBag.UserRoles = roles;
+            ViewBag.AvailableActions = availableActions;
+            
+            return View("ReviewPost", workflowItem);
+        }
+
+        /// <summary>
+        /// Updates a post's workflow state.
+        /// </summary>
+        [Authorize]
+        [Route("review-post/{id:Guid}")]
+        [HttpPost]
+        public async Task<IActionResult> ReviewPost(Guid id, string targetState, string feedback)
+        {
+            var post = await _api.Posts.GetByIdAsync(id);
+            if (post == null)
+            {
+                return NotFound();
+            }
+            
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Challenge();
+            }
+            
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
+            {
+                _logger.LogWarning("User with ID {UserId} not found", userId);
+                return Challenge();
             }
             
             var roles = await _userManager.GetRolesAsync(user);
             
-            List<SubmittedArticle> articles;
-            ArticleStatus? statusFilter = null;
-            
-            if (roles.Contains("SysAdmin"))
+            try
             {
-                // Admin can see all articles
-                articles = await _repository.GetSubmissionsAsync();
+                // Validate that a workflow exists
+                await ValidateWorkflowExistsAsync();
+                
+                var currentState = !string.IsNullOrEmpty(post.WorkflowState) ? post.WorkflowState : "draft";
+                
+                // Create workflow model for the transition
+                var workflowModel = new WorkflowModel
+                {
+                    ContentId = post.Id,
+                    ContentType = "post",
+                    CurrentState = currentState,
+                    TargetState = targetState,
+                    Comment = feedback
+                };
+                
+                _logger.LogInformation("Attempting workflow transition for post {PostId}: {CurrentState} -> {TargetState}", 
+                    id, currentState, targetState);
+                
+                // Perform the workflow transition using Piranha's workflow service
+                var result = await _workflowService.PerformTransitionAsync(workflowModel, userId);
+                
+                if (result.Type == StatusMessage.Success)
+                {
+                    _logger.LogInformation("Post {PostId} workflow transition from {CurrentState} to {TargetState} by user {UserId}", 
+                        id, currentState, targetState, User.Identity?.Name);
+                    
+                    return RedirectToAction("Workflow");
+                }
+                else
+                {
+                    _logger.LogWarning("Workflow transition failed for post {PostId} ({CurrentState} -> {TargetState}): {Error}", 
+                        id, currentState, targetState, result.Body);
+                    
+                    ModelState.AddModelError("", $"Status transition failed: {result.Body}");
+                    
+                    // Reload the view with error
+                    var workflowItem = new WorkflowItem
+                    {
+                        Id = post.Id,
+                        Title = post.Title,
+                        Author = "System",
+                        Created = post.Created,
+                        LastModified = post.LastModified,
+                        WorkflowState = currentState,
+                        ContentType = "post",
+                        BlogId = post.BlogId,
+                        IsPublished = post.Published.HasValue,
+                        Post = post
+                    };
+                    
+                    ViewBag.UserRoles = roles;
+                    return View("ReviewPost", workflowItem);
+                }
             }
-            else if (roles.Contains("Approver"))
+            catch (Exception ex)
             {
-                // Approver can see articles ready for approval
-                statusFilter = ArticleStatus.InReview;
-                articles = await _repository.GetSubmissionsAsync(statusFilter);
+                _logger.LogError(ex, "Error performing workflow transition for post {PostId}", id);
+                ModelState.AddModelError("", "An error occurred while updating the post status.");
+                
+                var workflowItem = new WorkflowItem
+                {
+                    Id = post.Id,
+                    Title = post.Title,
+                    Author = "System",
+                    Created = post.Created,
+                    LastModified = post.LastModified,
+                    WorkflowState = !string.IsNullOrEmpty(post.WorkflowState) ? post.WorkflowState : "draft",
+                    ContentType = "post",
+                    BlogId = post.BlogId,
+                    IsPublished = post.Published.HasValue,
+                    Post = post
+                };
+                
+                ViewBag.UserRoles = roles;
+                return View("ReviewPost", workflowItem);
             }
-            else if (roles.Contains("Editor"))
-            {
-                // Editor can see submitted articles to review
-                statusFilter = ArticleStatus.Draft;
-                articles = await _repository.GetSubmissionsAsync(statusFilter);
-            }
-            else if (roles.Contains("Writer"))
-            {
-                // Writer can only see their own articles
-                articles = await _repository.GetSubmissionsAsync(null, userId);
-            }
-            else
-            {
-                // No permissions
-                return Forbid();
-            }
-            
-            ViewBag.UserRoles = roles;
-            ViewBag.StatusFilter = statusFilter;
-            
-            return View(articles);
         }
 
         /// <summary>
@@ -229,9 +729,27 @@ namespace MvcWeb.Controllers
             // Check permissions based on status
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             
+            // Debug: Log user identity information
+            _logger.LogInformation("Review attempt - User.Identity.IsAuthenticated: {IsAuthenticated}, UserId: {UserId}, UserName: {UserName}", 
+                User.Identity?.IsAuthenticated, userId, User.Identity?.Name);
+            
+            // Debug: Log all claims
+            foreach (var claim in User.Claims)
+            {
+                _logger.LogDebug("User claim - Type: {ClaimType}, Value: {ClaimValue}", claim.Type, claim.Value);
+            }
+            
             if (string.IsNullOrEmpty(userId))
             {
-                return Challenge(); // Redirect to login if userId is null
+                // Try alternative claim types
+                userId = User.FindFirstValue("sub") ?? User.FindFirstValue("id") ?? User.FindFirstValue("nameid");
+                _logger.LogInformation("Alternative userId lookup result: {AlternativeUserId}", userId);
+                
+                if (string.IsNullOrEmpty(userId))
+                {
+                    _logger.LogWarning("No valid user ID found in claims, redirecting to login");
+                    return Challenge(); // Redirect to login if userId is null
+                }
             }
             
             var user = await _userManager.FindByIdAsync(userId);
@@ -244,42 +762,51 @@ namespace MvcWeb.Controllers
             
             var roles = await _userManager.GetRolesAsync(user);
             
+            // Check permissions based on workflow - if user has any available actions, they can view
             if (!roles.Contains("SysAdmin"))
             {
-                if (article.Status == ArticleStatus.Draft && !roles.Contains("Editor"))
+                var userActions = await GetAvailableActionsAsync(article, roles, userId);
+                
+                // If user has no available actions and doesn't own the article, they can't view it
+                bool isOwner = article.SubmittedById == userId;
+                
+                if (!userActions.Any() && !isOwner)
                 {
+                    _logger.LogInformation("User {UserId} has no workflow actions available for article {ArticleId} and is not the owner", 
+                        userId, article.Id);
                     return Forbid();
                 }
                 
-                if (article.Status == ArticleStatus.InReview && !roles.Contains("Approver") && !roles.Contains("Editor"))
-                {
-                    return Forbid();
-                }
-                
-                if (article.Status == ArticleStatus.Approved && !roles.Contains("Approver"))
-                {
-                    return Forbid();
-                }
+                _logger.LogInformation("User {UserId} has {ActionCount} available actions for article {ArticleId}, isOwner: {IsOwner}", 
+                    userId, userActions.Count, article.Id, isOwner);
             }
             
             ViewBag.UserRoles = roles;
+            
+            // Get available actions for this article based on current status and user roles
+            var availableActions = await GetAvailableActionsAsync(article, roles, userId);
+            ViewBag.AvailableActions = availableActions;
             
             return View(article);
         }
 
         /// <summary>
-        /// Updates an article's status.
+        /// Updates an article's workflow state using Piranha workflow transitions.
         /// </summary>
         [Authorize]
         [Route("review/{id:Guid}")]
         [HttpPost]
-        public async Task<IActionResult> Review(Guid id, ArticleStatus status, string feedback)
+        public async Task<IActionResult> Review(Guid id, string targetState, string feedback)
         {
-            using var activity = ActivitySource.StartActivity("ArticleController.Review");
+            _logger.LogInformation("=== REVIEW POST METHOD CALLED === ArticleId: {ArticleId}, TargetState: {TargetState}, User: {User}", 
+                id, targetState, User.Identity?.Name);
+                
+            using var activity = MetricsService.StartBusinessActivity("Article Review", "ArticleController");
             
-            activity?.SetTag("articleId", id.ToString());
-            activity?.SetTag("newStatus", status.ToString());
-            activity?.SetTag("userId", User.Identity?.Name ?? "unknown");
+            activity?.SetTag("article.id", id.ToString());
+            activity?.SetTag("workflow.target_state", targetState);
+            activity?.SetTag("user.name", User.Identity?.Name ?? "unknown");
+            activity?.SetTag("feedback.length", feedback?.Length ?? 0);
             
             var article = await _repository.GetSubmissionByIdAsync(id);
             
@@ -289,79 +816,546 @@ namespace MvcWeb.Controllers
                 return NotFound();
             }
             
-            activity?.SetTag("previousStatus", article.Status.ToString());
+            activity?.SetTag("workflow.previous_state", article.WorkflowState);
+            activity?.SetTag("article.title", article.Submission.Title);
+            activity?.SetTag("article.blog_id", article.BlogId.ToString());
             
-            // Check permissions based on status
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            
             if (string.IsNullOrEmpty(userId))
             {
-                return Challenge(); // Redirect to login if userId is null
+                return Challenge();
             }
             
             var user = await _userManager.FindByIdAsync(userId);
-            
             if (user == null)
             {
                 _logger.LogWarning("User with ID {UserId} not found", userId);
-                return Challenge(); // Redirect to login if user not found
+                return Challenge();
             }
             
             var roles = await _userManager.GetRolesAsync(user);
             activity?.SetTag("userRoles", string.Join(",", roles));
             
-            if (!roles.Contains("SysAdmin"))
-            {
-                if (status == ArticleStatus.InReview || status == ArticleStatus.Rejected)
-                {
-                    if (!roles.Contains("Editor"))
-                    {
-                        activity?.SetTag("outcome", "forbidden");
-                        return Forbid();
-                    }
-                }
-                
-                if (status == ArticleStatus.Approved || status == ArticleStatus.Published)
-                {
-                    if (!roles.Contains("Approver"))
-                    {
-                        activity?.SetTag("outcome", "forbidden");
-                        return Forbid();
-                    }
-                }
-            }
-            
             try
             {
-                await _repository.UpdateSubmissionStatusAsync(id, status, userId, feedback);
+                // ALWAYS use workflow transitions for ALL status changes
                 
-                ArticleReviewsCounter.Add(1, 
-                    new KeyValuePair<string, object?>("status", "success"), 
-                    new KeyValuePair<string, object?>("previousStatus", article.Status.ToString()),
-                    new KeyValuePair<string, object?>("newStatus", status.ToString()));
+                // Validate that a workflow exists (but use whatever is configured)
+                await ValidateWorkflowExistsAsync();
                 
-                activity?.SetTag("outcome", "success");
+                // Create or get Piranha post for workflow management
+                Guid postId;
+                if (article.PostId.HasValue)
+                {
+                    postId = article.PostId.Value;
+                }
+                else
+                {
+                    // Create a new Piranha post for this article to manage via workflow
+                    var newPostId = await CreatePostFromArticleAsync(article);
+                    if (!newPostId.HasValue)
+                    {
+                        ModelState.AddModelError("", "Error creating post for workflow management.");
+                        ViewBag.UserRoles = roles;
+                        return View(article);
+                    }
+                    postId = newPostId.Value;
+                    
+                    // Update the article with the post ID in our database
+                    await _repository.UpdateArticlePostIdAsync(id, postId);
+                    _logger.LogInformation("Created/found post {PostId} for article {ArticleId}", postId, id);
+                }
                 
-                _logger.LogInformation("Article {ArticleId} status updated from {PreviousStatus} to {NewStatus} by user {UserId}", 
-                    id, article.Status, status, User.Identity?.Name);
+                // Use current workflow state and target state from the workflow transition
+                var currentState = article.WorkflowState ?? "draft";
                 
-                return RedirectToAction("Workflow");
+                // Create workflow model for the transition
+                var workflowModel = new WorkflowModel
+                {
+                    ContentId = postId,
+                    ContentType = "post",
+                    CurrentState = currentState,
+                    TargetState = targetState,
+                    Comment = feedback
+                };
+                
+                _logger.LogInformation("Attempting workflow transition for article {ArticleId}: {CurrentState} -> {TargetState}", 
+                    id, currentState, targetState);
+                
+                // Perform the workflow transition using Piranha's workflow service
+                var result = await _workflowService.PerformTransitionAsync(workflowModel, userId);
+                
+                if (result.Type == StatusMessage.Success)
+                {
+                    _logger.LogInformation("=== PIRANHA WORKFLOW TRANSITION SUCCESSFUL === Calling UpdateSubmissionStateAsync for article {ArticleId} to state {TargetState}", 
+                        id, targetState);
+                        
+                    // Update the article state in our database to match the workflow transition
+                    await _repository.UpdateSubmissionStateAsync(id, targetState, userId, feedback);
+                    
+                    _logger.LogInformation("=== UpdateSubmissionStateAsync COMPLETED === for article {ArticleId}", id);
+                    
+                    ArticleReviewsCounter.Add(1, 
+                        new KeyValuePair<string, object?>("status", "success"), 
+                        new KeyValuePair<string, object?>("previousState", article.WorkflowState),
+                        new KeyValuePair<string, object?>("newState", targetState));
+                    
+                    activity?.SetTag("outcome", "success");
+                    activity?.SetTag("workflowTransition", $"{currentState}->{targetState}");
+                    
+                    _logger.LogInformation("Article {ArticleId} workflow transition from {CurrentState} to {TargetState} by user {UserId}", 
+                        id, currentState, targetState, User.Identity?.Name);
+                    
+                    return RedirectToAction("Workflow");
+                }
+                else
+                {
+                    // Workflow transition failed - this means the user doesn't have permission or the transition doesn't exist
+                    activity?.SetTag("outcome", "workflow_error");
+                    activity?.SetTag("workflowError", result.Body);
+                    
+                    _logger.LogWarning("Workflow transition failed for article {ArticleId} ({CurrentState} -> {TargetState}): {Error}", 
+                        id, currentState, targetState, result.Body);
+                    
+                    ModelState.AddModelError("", $"Status transition failed: {result.Body}");
+                    ViewBag.UserRoles = roles;
+                    return View(article);
+                }
             }
             catch (Exception ex)
             {
                 ArticleReviewsCounter.Add(1, 
                     new KeyValuePair<string, object?>("status", "error"), 
-                    new KeyValuePair<string, object?>("previousStatus", article.Status.ToString()),
-                    new KeyValuePair<string, object?>("newStatus", status.ToString()));
+                    new KeyValuePair<string, object?>("previousState", article.WorkflowState),
+                    new KeyValuePair<string, object?>("newState", targetState));
                 
                 activity?.SetTag("outcome", "error");
                 activity?.SetTag("error.message", ex.Message);
                 activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 
-                _logger.LogError(ex, "Error updating article status");
+                _logger.LogError(ex, "Error performing workflow transition for article {ArticleId}", id);
                 ModelState.AddModelError("", "An error occurred while updating the article status.");
                 ViewBag.UserRoles = roles;
                 return View(article);
+            }
+        }
+
+
+        /// <summary>
+        /// Gets available actions for an article based on actual workflow transitions
+        /// </summary>
+        private async Task<List<ArticleAction>> GetAvailableActionsAsync(SubmittedArticle article, IList<string> userRoles, string userId)
+        {
+            var actions = new List<ArticleAction>();
+            
+            try
+            {
+                // Validate workflow exists first  
+                await ValidateWorkflowExistsAsync();
+                
+                // Create or get post ID for workflow queries
+                Guid postId;
+                if (article.PostId.HasValue)
+                {
+                    postId = article.PostId.Value;
+                }
+                else
+                {
+                    // For articles without posts yet, we need to get user role IDs and query the workflow definition directly
+                    var currentState = article.WorkflowState ?? "draft";
+                    
+                    // Get user role IDs
+                    var userRoleIds = await GetUserRoleIdsAsync(userId);
+                    
+                    var availableTransitions = await _workflowDefinitionService.GetAvailableTransitionsAsync("post", currentState, userRoleIds);
+                    
+                    _logger.LogInformation("Found {Count} workflow transitions for article {ArticleId} in state {CurrentState} (no post yet), user roles: {UserRoles}", 
+                        availableTransitions.Count(), article.Id, currentState, string.Join(", ", userRoleIds));
+                    
+                    // Log each available transition for debugging
+                    foreach (var transition in availableTransitions)
+                    {
+                        _logger.LogInformation("Available transition for article {ArticleId}: {FromState} -> {ToState} ('{Name}')", 
+                            article.Id, transition.FromStateKey, transition.ToStateKey, transition.Name);
+                    }
+                    
+                    // Convert workflow transitions to article actions
+                    foreach (var transition in availableTransitions)
+                    {
+                        var action = CreateActionFromTransition(transition, transition.ToStateKey);
+                        if (action != null)
+                        {
+                            actions.Add(action);
+                        }
+                    }
+                    
+                    _logger.LogInformation("Generated {Count} available actions for article {ArticleId} in status {Status} (from workflow definition)", 
+                        actions.Count, article.Id, article.Status);
+                    
+                    return actions;
+                }
+                
+                // Get actual workflow transitions for the post
+                var workflowModel = await _workflowService.GetWorkflowTransitionsAsync("post", postId, userId);
+                var workflowTransitions = workflowModel.AvailableTransitions.ToList();
+                
+                _logger.LogInformation("Found {Count} workflow transitions for article {ArticleId} with post {PostId}", 
+                    workflowTransitions.Count, article.Id, postId);
+                
+                // Convert workflow transitions to article actions
+                foreach (var transition in workflowTransitions)
+                {
+                    var action = CreateActionFromTransition(transition, transition.ToState);
+                    if (action != null)
+                    {
+                        actions.Add(action);
+                    }
+                }
+                
+                _logger.LogInformation("Generated {Count} available actions for article {ArticleId} in status {Status} (from workflow transitions)", 
+                    actions.Count, article.Id, article.Status);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting available actions for article {ArticleId}", article.Id);
+            }
+            
+            return actions;
+        }
+
+        /// <summary>
+        /// Gets user role IDs for the given user
+        /// </summary>
+        private async Task<List<Guid>> GetUserRoleIdsAsync(string userId)
+        {
+            var roleIds = new List<Guid>();
+            
+            try
+            {
+                var user = await _userManager.FindByIdAsync(userId);
+                if (user != null)
+                {
+                    var roleNames = await _userManager.GetRolesAsync(user);
+                    
+                    _logger.LogInformation("User {UserId} has roles: {RoleNames}", userId, string.Join(", ", roleNames));
+                    
+                    // Look up role IDs from the database using RoleManager
+                    foreach (var roleName in roleNames)
+                    {
+                        var role = await _roleManager.FindByNameAsync(roleName);
+                        if (role != null)
+                        {
+                            // role.Id is of type Guid, so use it directly
+                            roleIds.Add(role.Id);
+                            _logger.LogDebug("Mapped role {RoleName} to ID {RoleId}", roleName, role.Id);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("Could not find role ID for role name: {RoleName}", roleName);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting role IDs for user {UserId}", userId);
+            }
+            
+            return roleIds;
+        }
+
+        /// <summary>
+        /// Creates an ArticleAction from a workflow transition
+        /// </summary>
+        private ArticleAction CreateActionFromTransition(dynamic transition, string targetState)
+        {
+            // Handle different transition object types
+            string name;
+            bool requiresComment;
+            string cssClass;
+            string icon;
+            
+            // Check if this is a WorkflowTransition from workflow definition service
+            if (transition is Piranha.Models.WorkflowTransition workflowDefTransition)
+            {
+                name = workflowDefTransition.Name ?? "Transition";
+                requiresComment = workflowDefTransition.RequiresComment;
+                cssClass = workflowDefTransition.CssClass ?? "btn-primary";
+                icon = workflowDefTransition.Icon ?? "fas fa-arrow-right";
+            }
+            // Check if this is a WorkflowModel.WorkflowTransition from workflow service
+            else if (transition is Piranha.Manager.Models.WorkflowModel.WorkflowTransition workflowModelTransition)
+            {
+                name = workflowModelTransition.Name ?? "Transition";
+                requiresComment = workflowModelTransition.RequiresComment;
+                cssClass = workflowModelTransition.CssClass ?? "btn-primary";
+                icon = workflowModelTransition.Icon ?? "fas fa-arrow-right";
+            }
+            else
+            {
+                // Fallback to dynamic access for unknown types
+                name = transition.Name ?? "Transition";
+                
+                // Safely get RequiresComment property
+                try
+                {
+                    requiresComment = transition.RequiresComment ?? false;
+                }
+                catch
+                {
+                    requiresComment = false;
+                }
+                
+                // Safely get other properties with fallbacks
+                try
+                {
+                    cssClass = transition.CssClass ?? "btn-primary";
+                }
+                catch
+                {
+                    cssClass = "btn-primary";
+                }
+                
+                try
+                {
+                    icon = transition.Icon ?? "fas fa-arrow-right";
+                }
+                catch
+                {
+                    icon = "fas fa-arrow-right";
+                }
+            }
+            
+            // Map common transition names to better action names and icons
+            var actionMapping = new Dictionary<string, (string name, string icon, string cssClass)>
+            {
+                {"Submit for Review", ("Send for Review", "fas fa-paper-plane", "btn-primary")},
+                {"Approve", ("Approve", "fas fa-check", "btn-success")},
+                {"Reject", ("Reject", "fas fa-times", "btn-danger")},
+                {"Publish", ("Publish", "fas fa-globe", "btn-primary")},
+                {"Back to Draft", ("Send Back to Draft", "fas fa-undo", "btn-secondary")},
+                {"Unpublish", ("Unpublish", "fas fa-eye-slash", "btn-warning")}
+            };
+            
+            if (actionMapping.ContainsKey(name))
+            {
+                var mapping = actionMapping[name];
+                name = mapping.name;
+                icon = mapping.icon;
+                cssClass = mapping.cssClass;
+            }
+            
+            return new ArticleAction
+            {
+                Name = name,
+                Icon = icon,
+                CssClass = cssClass,
+                TargetState = targetState,
+                RequiresComment = requiresComment,
+                IsWorkflowTransition = true
+            };
+        }
+
+
+        /// <summary>
+        /// Checks if a workflow state is considered published
+        /// </summary>
+        private async Task<bool> IsWorkflowStatePublishedAsync(string workflowState)
+        {
+            if (string.IsNullOrEmpty(workflowState))
+                return false;
+
+            try
+            {
+                var workflow = await _workflowDefinitionService.GetDefaultByContentTypeAsync("post");
+                if (workflow?.States == null || !workflow.States.Any())
+                {
+                    return false;
+                }
+
+                var state = workflow.States.FirstOrDefault(s => s.Key == workflowState);
+                if (state == null)
+                {
+                    return false;
+                }
+
+                // Check if the state is marked as published or is final
+                return state.IsPublished || state.IsFinal;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking if workflow state {WorkflowState} is published", workflowState);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Validates that a workflow exists for the content type, but uses whatever workflow is configured
+        /// </summary>
+        private async Task ValidateWorkflowExistsAsync()
+        {
+            try
+            {
+                var workflow = await _workflowDefinitionService.GetDefaultByContentTypeAsync("post");
+                
+                if (workflow == null)
+                {
+                    _logger.LogWarning("No default workflow found for post content type");
+                    
+                    // Try to get all workflows to see what's available
+                    var allWorkflows = await _workflowDefinitionService.GetAllAsync();
+                    _logger.LogInformation("Found {WorkflowCount} total workflows in system", allWorkflows.Count());
+                    
+                    foreach (var wf in allWorkflows)
+                    {
+                        _logger.LogInformation("Available workflow: '{Name}' for content type '{ContentType}' with {StateCount} states", 
+                            wf.Name, wf.ContentTypes, wf.States?.Count ?? 0);
+                    }
+                    return;
+                }
+
+                _logger.LogInformation("Using existing workflow '{WorkflowName}' (ID: {WorkflowId}) for posts with {StateCount} states and {TransitionCount} transitions", 
+                    workflow.Name, workflow.Id, workflow.States?.Count ?? 0, workflow.Transitions?.Count ?? 0);
+                    
+                // Log the available states and transitions for debugging
+                if (workflow.States?.Any() == true)
+                {
+                    foreach (var state in workflow.States)
+                    {
+                        _logger.LogInformation("Workflow state: '{StateKey}' - {StateName} (Color: {Color})", 
+                            state.Key, state.Name, state.Color);
+                    }
+                }
+                
+                if (workflow.Transitions?.Any() == true)
+                {
+                    foreach (var transition in workflow.Transitions)
+                    {
+                        _logger.LogInformation("Workflow transition: {FromState} -> {ToState} ('{Name}') requires role: {RoleId}, requires comment: {RequiresComment}", 
+                            transition.FromStateKey, transition.ToStateKey, transition.Name, 
+                            transition.RequiredRoleId?.ToString() ?? "None", transition.RequiresComment);
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning("Workflow '{WorkflowName}' has no transitions defined!", workflow.Name);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating workflow exists");
+            }
+        }
+
+
+        /// <summary>
+        /// Creates a Piranha post from article and returns its ID, or returns existing post ID if one already exists
+        /// </summary>
+        private async Task<Guid?> CreatePostFromArticleAsync(SubmittedArticle article)
+        {
+            try
+            {
+                // Generate the expected slug for this article
+                var baseSlug = Utils.GenerateSlug(article.Submission.Title);
+                var expectedSlug = $"{baseSlug}-{article.Id.ToString("N")[..8]}"; // Use first 8 chars of article ID
+                
+                // Check if a post with this slug already exists
+                var existingPost = await _api.Posts.GetBySlugAsync(article.BlogId, expectedSlug);
+                if (existingPost != null)
+                {
+                    _logger.LogInformation("Found existing post {PostId} with slug '{Slug}' for article {ArticleId}", 
+                        existingPost.Id, expectedSlug, article.Id);
+                    return existingPost.Id;
+                }
+                
+                // Create a new post
+                var post = await StandardPost.CreateAsync(_api);
+                
+                // Set basic fields
+                post.BlogId = article.BlogId;
+                post.Title = article.Submission.Title;
+                post.Excerpt = !string.IsNullOrWhiteSpace(article.Submission.Excerpt) 
+                    ? article.Submission.Excerpt 
+                    : article.Submission.Title;
+                post.Category = !string.IsNullOrWhiteSpace(article.Submission.Category)
+                    ? article.Submission.Category
+                    : "General";
+                
+                // Try the expected slug first, but add fallback for uniqueness
+                var finalSlug = expectedSlug;
+                var slugAttempts = 0;
+                while (slugAttempts < 5) // Try up to 5 times
+                {
+                    var slugExists = await _api.Posts.GetBySlugAsync(article.BlogId, finalSlug);
+                    if (slugExists == null)
+                    {
+                        break; // Slug is unique, we can use it
+                    }
+                    
+                    // Slug exists, try with a timestamp suffix
+                    slugAttempts++;
+                    finalSlug = $"{expectedSlug}-{DateTime.Now.Ticks.ToString()[..8]}";
+                    _logger.LogInformation("Slug '{PreviousSlug}' exists, trying '{NewSlug}' (attempt {Attempt})", 
+                        expectedSlug, finalSlug, slugAttempts);
+                }
+                
+                post.Slug = finalSlug;
+                
+                // Set the workflow state to draft initially
+                post.WorkflowState = "draft";
+                
+                _logger.LogInformation("Creating new post with slug: {Slug} for article {ArticleId}", post.Slug, article.Id);
+                
+                // Process tags
+                if (!string.IsNullOrWhiteSpace(article.Submission.Tags))
+                {
+                    var tags = article.Submission.Tags
+                        .Split(',')
+                        .Select(t => t.Trim())
+                        .Where(t => !string.IsNullOrWhiteSpace(t));
+                    
+                    foreach (var tag in tags)
+                    {
+                        post.Tags.Add(tag);
+                    }
+                }
+
+                // Create content block
+                var htmlBlock = new Piranha.Extend.Blocks.HtmlBlock
+                {
+                    Body = new Piranha.Extend.Fields.HtmlField
+                    {
+                        Value = article.Submission.Content
+                    }
+                };
+                post.Blocks.Add(htmlBlock);
+
+                // Set metadata
+                post.MetaTitle = article.Submission.Title;
+                post.MetaDescription = article.Submission.Excerpt;
+
+                try
+                {
+                    // Save the post (without publishing yet)
+                    await _api.Posts.SaveAsync(post);
+                }
+                catch (System.ComponentModel.DataAnnotations.ValidationException ex) when (ex.Message.Contains("slug already exists"))
+                {
+                    // Last resort: use a completely unique slug with GUID
+                    post.Slug = $"{baseSlug}-{Guid.NewGuid().ToString("N")[..12]}";
+                    _logger.LogWarning("Slug conflict persisted, using unique GUID slug: {Slug}", post.Slug);
+                    await _api.Posts.SaveAsync(post);
+                }
+                
+                _logger.LogInformation("Created Piranha post {PostId} from article {ArticleId}", 
+                    post.Id, article.Id);
+                
+                return post.Id;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating Piranha post from article {ArticleId}", article.Id);
+                return null;
             }
         }
     }

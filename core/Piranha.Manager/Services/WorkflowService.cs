@@ -8,8 +8,11 @@
  *
  */
 
+using Microsoft.AspNetCore.Http;
 using Piranha.Manager.Models;
 using Piranha.Services;
+using System.Security.Claims;
+using Microsoft.Extensions.Logging;
 
 namespace Piranha.Manager.Services;
 
@@ -22,6 +25,8 @@ public class WorkflowService
     private readonly ManagerLocalizer _localizer;
     private readonly NotificationService _notificationService;
     private readonly IWorkflowDefinitionService _workflowDefinitionService;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private ILogger<WorkflowService> _logger;
 
     /// <summary>
     /// Constructor.
@@ -30,12 +35,15 @@ public class WorkflowService
     /// <param name="localizer">The localizer</param>
     /// <param name="notificationService">The notification service</param>
     /// <param name="workflowDefinitionService">The workflow definition service</param>
-    public WorkflowService(IApi api, ManagerLocalizer localizer, NotificationService notificationService, IWorkflowDefinitionService workflowDefinitionService)
+    /// <param name="httpContextAccessor">The HTTP context accessor</param>
+    public WorkflowService(IApi api, ManagerLocalizer localizer, NotificationService notificationService, IWorkflowDefinitionService workflowDefinitionService, IHttpContextAccessor httpContextAccessor, ILogger<WorkflowService> logger)
     {
+        _logger = logger;
         _api = api;
         _localizer = localizer;
         _notificationService = notificationService;
         _workflowDefinitionService = workflowDefinitionService;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     /// <summary>
@@ -70,20 +78,20 @@ public class WorkflowService
             model.CurrentState = ContentState.Draft;
         }
         
-        // Get user permissions from the current principal
-        var permissions = App.Permissions.GetPublicPermissions()
-            .Select(p => p.Name)
-            .ToList();
+        // Get user roles from the current principal
+        var userRoles = await GetCurrentUserRolesAsync();
 
-        // Get all available transitions based on the current state and user permissions
-        var workflowTransitions = await _workflowDefinitionService.GetAvailableTransitionsAsync(contentType, model.CurrentState, permissions);
+        // Get all available transitions based on the current state and user roles
+        var workflowTransitions = await _workflowDefinitionService.GetAvailableTransitionsAsync(contentType, model.CurrentState, userRoles);
         model.AvailableTransitions = workflowTransitions.Select(t => new WorkflowModel.WorkflowTransition
         {
             FromState = t.FromStateKey,
             ToState = t.ToStateKey,
             Name = t.Name,
-            Permission = t.RequiredPermission,
-            CssClass = t.CssClass
+            RoleId = t.RequiredRoleId,
+            CssClass = t.CssClass,
+            RequiresComment = t.RequiresComment,
+            Icon = t.Icon
         }).ToList();
 
         return model;
@@ -99,16 +107,20 @@ public class WorkflowService
     {
         try
         {
-            // Get user permissions from the current principal
-            var permissions = App.Permissions.GetPublicPermissions()
-                .Select(p => p.Name)
-                .ToList();
+            // Get user roles from the current principal
+            var userRoles = await GetCurrentUserRolesAsync();
 
             // Validate the transition is allowed for this user
-            var isValidTransition = await _workflowDefinitionService.ValidateTransitionAsync(model.ContentType, model.CurrentState, model.TargetState, permissions);
+            _logger?.LogInformation("Validating transition for content {ContentType} from {CurrentState} to {TargetState} with user roles: {UserRoles}", 
+                model.ContentType, model.CurrentState, model.TargetState, string.Join(", ", userRoles));
+                
+            var isValidTransition = await _workflowDefinitionService.ValidateTransitionAsync(model.ContentType, model.CurrentState, model.TargetState, userRoles);
 
             if (!isValidTransition)
             {
+                _logger?.LogWarning("Transition validation failed for content {ContentType} from {CurrentState} to {TargetState} with user roles: {UserRoles}", 
+                    model.ContentType, model.CurrentState, model.TargetState, string.Join(", ", userRoles));
+                    
                 return new StatusMessage
                 {
                     Type = StatusMessage.Error,
@@ -129,30 +141,74 @@ public class WorkflowService
                     };
                 }
 
+                // Get the specific transition that was performed
+                var workflowTransitions = await _workflowDefinitionService.GetAvailableTransitionsAsync("page", model.CurrentState, userRoles);
+                
+                _logger?.LogInformation("Found {TransitionCount} available transitions for page from {CurrentState}: {Transitions}", 
+                    workflowTransitions.Count(), model.CurrentState, 
+                    string.Join(", ", workflowTransitions.Select(t => $"{t.FromStateKey}->{t.ToStateKey} (RequiredRole: {t.RequiredRoleId}, RequiresComment: {t.RequiresComment})")));
+                
+                var transition = workflowTransitions.FirstOrDefault(t => t.ToStateKey == model.TargetState);
+
+                if (transition == null)
+                {
+                    _logger?.LogWarning("No transition found for page from {CurrentState} to {TargetState}", model.CurrentState, model.TargetState);
+                    return new StatusMessage
+                    {
+                        Type = StatusMessage.Error,
+                        Body = _localizer.General["Invalid workflow transition."]
+                    };
+                }
+
+                _logger?.LogInformation("Selected transition: {FromState} -> {ToState}, RequiresComment: {RequiresComment}, ProvidedComment: '{Comment}'", 
+                    transition.FromStateKey, transition.ToStateKey, transition.RequiresComment, model.Comment ?? "(null)");
+
+                // Validate comment requirement
+                if (transition.RequiresComment && string.IsNullOrWhiteSpace(model.Comment))
+                {
+                    _logger?.LogWarning("Comment required for transition {FromState} -> {ToState} but none provided", 
+                        transition.FromStateKey, transition.ToStateKey);
+                    return new StatusMessage
+                    {
+                        Type = StatusMessage.Error,
+                        Body = _localizer.General["This transition requires a comment."]
+                    };
+                }
+
                 // Update the page's workflow state
                 page.WorkflowState = model.TargetState;
                 page.LastReviewerId = Guid.NewGuid(); // Use a generic ID since we don't depend on identity
                 page.LastReviewedOn = DateTime.Now;
                 page.ReviewComment = model.Comment;
 
-                // If the state is "Approved", we don't publish yet, just mark as approved
-                // If the state is "Published", then we actually publish
+                // Handle publishing logic based on target state
                 if (model.TargetState == ContentState.Published)
                 {
                     page.Published = DateTime.Now;
                 }
+                else if (model.TargetState == ContentState.Draft && page.Published.HasValue)
+                {
+                    // Unpublishing - clear the published date
+                    page.Published = null;
+                }
 
                 await _api.Pages.SaveAsync(page);
 
-                // Create notification
-                var pageDisplayName = await GetStateDisplayNameAsync("page", model.TargetState);
-                await _notificationService.CreateNotificationAsync(
-                    page.Id, 
-                    "page", 
-                    page.Title,
-                    Guid.NewGuid(), // Generate a new ID since we don't depend on identity
-                    "workflow",
-                    $"Page workflow state updated to {pageDisplayName}");
+                // Send notification if the transition requires it
+                if (transition.SendNotification)
+                {
+                    var notificationMessage = !string.IsNullOrWhiteSpace(transition.NotificationTemplate) 
+                        ? transition.NotificationTemplate 
+                        : $"Page workflow state updated to {await GetStateDisplayNameAsync("page", model.TargetState)}";
+
+                    await _notificationService.CreateNotificationAsync(
+                        page.Id, 
+                        "page", 
+                        page.Title,
+                        Guid.NewGuid(), // Generate a new ID since we don't depend on identity
+                        "workflow",
+                        notificationMessage);
+                }
 
                 var displayName = await GetStateDisplayNameAsync("page", model.TargetState);
                 return new StatusMessage
@@ -173,37 +229,82 @@ public class WorkflowService
                     };
                 }
 
+                // Get the specific transition that was performed
+                var workflowTransitions = await _workflowDefinitionService.GetAvailableTransitionsAsync("post", model.CurrentState, userRoles);
+                
+                _logger?.LogInformation("Found {TransitionCount} available transitions for post from {CurrentState}: {Transitions}", 
+                    workflowTransitions.Count(), model.CurrentState, 
+                    string.Join(", ", workflowTransitions.Select(t => $"{t.FromStateKey}->{t.ToStateKey} (RequiredRole: {t.RequiredRoleId}, RequiresComment: {t.RequiresComment})")));
+                
+                var transition = workflowTransitions.FirstOrDefault(t => t.ToStateKey == model.TargetState);
+
+                if (transition == null)
+                {
+                    _logger?.LogWarning("No transition found for post from {CurrentState} to {TargetState}", model.CurrentState, model.TargetState);
+                    return new StatusMessage
+                    {
+                        Type = StatusMessage.Error,
+                        Body = _localizer.General["Invalid workflow transition."]
+                    };
+                }
+
+                _logger?.LogInformation("Selected transition: {FromState} -> {ToState}, RequiresComment: {RequiresComment}, ProvidedComment: '{Comment}'", 
+                    transition.FromStateKey, transition.ToStateKey, transition.RequiresComment, model.Comment ?? "(null)");
+
+                // Validate comment requirement
+                if (transition.RequiresComment && string.IsNullOrWhiteSpace(model.Comment))
+                {
+                    _logger?.LogWarning("Comment required for transition {FromState} -> {ToState} but none provided", 
+                        transition.FromStateKey, transition.ToStateKey);
+                    return new StatusMessage
+                    {
+                        Type = StatusMessage.Error,
+                        Body = _localizer.General["This transition requires a comment."]
+                    };
+                }
+
                 // Update the post's workflow state
                 post.WorkflowState = model.TargetState;
                 post.LastReviewerId = Guid.NewGuid(); // Use a generic ID since we don't depend on identity
                 post.LastReviewedOn = DateTime.Now;
                 post.ReviewComment = model.Comment;
 
-                // If the state is "Approved", we don't publish yet, just mark as approved
-                // If the state is "Published", then we actually publish
+                // Handle publishing logic based on target state
                 if (model.TargetState == ContentState.Published)
                 {
                     post.Published = DateTime.Now;
                 }
+                else if (model.TargetState == ContentState.Draft && post.Published.HasValue)
+                {
+                    // Unpublishing - clear the published date
+                    post.Published = null;
+                }
 
                 await _api.Posts.SaveAsync(post);
 
-                // Create notification
-                var postDisplayName = await GetStateDisplayNameAsync("post", model.TargetState);
-                await _notificationService.CreateNotificationAsync(
-                    post.Id, 
-                    "post", 
-                    post.Title,
-                    Guid.NewGuid(), // Generate a new ID since we don't depend on identity
-                    "workflow",
-                    $"Post workflow state updated to {postDisplayName}");
+                // Send notification if the transition requires it
+                if (transition.SendNotification)
+                {
+                    var notificationMessage = !string.IsNullOrWhiteSpace(transition.NotificationTemplate) 
+                        ? transition.NotificationTemplate 
+                        : $"Post workflow state updated to {await GetStateDisplayNameAsync("post", model.TargetState)}";
 
-                var postDisplayNameForMessage = await GetStateDisplayNameAsync("post", model.TargetState);
+                    await _notificationService.CreateNotificationAsync(
+                        post.Id, 
+                        "post", 
+                        post.Title,
+                        Guid.NewGuid(), // Generate a new ID since we don't depend on identity
+                        "workflow",
+                        notificationMessage);
+                }
+
+                var displayName = await GetStateDisplayNameAsync("post", model.TargetState);
                 return new StatusMessage
                 {
                     Type = StatusMessage.Success,
-                    Body = string.Format(_localizer.General["Post workflow state updated to {0}."], postDisplayNameForMessage)
+                    Body = string.Format(_localizer.General["Post workflow state updated to {0}."], displayName)
                 };
+                
             }
 
             return new StatusMessage
@@ -222,6 +323,168 @@ public class WorkflowService
         }
     }
 
+
+    /// <summary>
+    /// Gets the current user's role IDs from the claims principal
+    /// </summary>
+    private async Task<List<Guid>> GetCurrentUserRolesAsync()
+    {
+        var roleIds = new List<Guid>();
+        
+        try
+        {
+            var user = _httpContextAccessor.HttpContext?.User;
+            if (user?.Identity?.IsAuthenticated != true)
+            {
+                _logger?.LogWarning("User is not authenticated");
+                return roleIds;
+            }
+
+            _logger?.LogInformation("Getting roles for user: {UserName}", user.Identity.Name);
+
+            // Get role claims from the user's identity
+            var roleClaims = user.Claims.Where(c => c.Type == ClaimTypes.Role || c.Type == "role").ToList();
+            
+            _logger?.LogInformation("Found {ClaimCount} role claims for user {UserName}: {Claims}", 
+                roleClaims.Count, user.Identity.Name, string.Join(", ", roleClaims.Select(c => $"{c.Type}={c.Value}")));
+            
+            foreach (var roleClaim in roleClaims)
+            {
+                _logger?.LogDebug("Processing role claim: {Type}={Value}", roleClaim.Type, roleClaim.Value);
+                
+                // Try to parse role value as GUID (if it's stored as role ID)
+                if (Guid.TryParse(roleClaim.Value, out var roleId))
+                {
+                    _logger?.LogDebug("Role claim value is a GUID: {RoleId}", roleId);
+                    roleIds.Add(roleId);
+                }
+                else
+                {
+                    _logger?.LogDebug("Role claim value is a name, looking up ID for: {RoleName}", roleClaim.Value);
+                    // If it's stored as role name, try to get the role ID
+                    var roleIdFromName = await GetRoleIdByNameAsync(roleClaim.Value);
+                    if (roleIdFromName.HasValue)
+                    {
+                        _logger?.LogDebug("Found role ID {RoleId} for role name {RoleName}", roleIdFromName.Value, roleClaim.Value);
+                        roleIds.Add(roleIdFromName.Value);
+                    }
+                    else
+                    {
+                        _logger?.LogWarning("Could not find role ID for role name: {RoleName}", roleClaim.Value);
+                    }
+                }
+            }
+            
+            _logger?.LogInformation("Resolved {RoleCount} role IDs for user {UserName}: {RoleIds}", 
+                roleIds.Count, user.Identity.Name, string.Join(", ", roleIds));
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Error getting user roles");
+            // If there's any error getting roles, return empty list (safer default)
+            return new List<Guid>();
+        }
+
+        return roleIds;
+    }
+
+    /// <summary>
+    /// Gets a role ID by name from the Identity database
+    /// </summary>
+    private async Task<Guid?> GetRoleIdByNameAsync(string roleName)
+    {
+        try
+        {
+            // Get the Identity database context using reflection (similar to WorkflowDefinitionService)
+            var piranhaIdentityAssembly = AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(a => a.GetName().Name == "Piranha.AspNetCore.Identity");
+            
+            if (piranhaIdentityAssembly == null)
+            {
+                return null;
+            }
+
+            // Get the IDb interface type
+            var idbType = piranhaIdentityAssembly.GetType("Piranha.AspNetCore.Identity.IDb");
+            if (idbType == null)
+            {
+                return null;
+            }
+
+            // Get the Identity DB from HttpContext services
+            var identityDb = _httpContextAccessor.HttpContext?.RequestServices.GetService(idbType);
+            if (identityDb == null)
+            {
+                return null;
+            }
+
+            // Get the Roles property
+            var rolesProperty = idbType.GetProperty("Roles");
+            if (rolesProperty == null)
+            {
+                return null;
+            }
+
+            var rolesDbSet = rolesProperty.GetValue(identityDb);
+            if (rolesDbSet == null)
+            {
+                return null;
+            }
+
+            // Get the role type
+            var roleType = piranhaIdentityAssembly.GetType("Piranha.AspNetCore.Identity.Data.Role");
+            if (roleType == null)
+            {
+                return null;
+            }
+
+            // Use LINQ to find the role by name
+            var whereMethod = typeof(Enumerable).GetMethods()
+                .Where(m => m.Name == "Where" && m.GetParameters().Length == 2)
+                .First().MakeGenericMethod(roleType);
+
+            var nameProperty = roleType.GetProperty("Name");
+            if (nameProperty == null)
+            {
+                return null;
+            }
+
+            // Create a predicate to find role by name
+            var parameterExpression = System.Linq.Expressions.Expression.Parameter(roleType, "r");
+            var propertyExpression = System.Linq.Expressions.Expression.Property(parameterExpression, nameProperty);
+            var constantExpression = System.Linq.Expressions.Expression.Constant(roleName);
+            var equalExpression = System.Linq.Expressions.Expression.Equal(propertyExpression, constantExpression);
+            var lambdaExpression = System.Linq.Expressions.Expression.Lambda(equalExpression, parameterExpression);
+
+            var filteredRoles = whereMethod.Invoke(null, new[] { rolesDbSet, lambdaExpression.Compile() });
+
+            // Get first or default
+            var firstOrDefaultMethod = typeof(Enumerable).GetMethods()
+                .Where(m => m.Name == "FirstOrDefault" && m.GetParameters().Length == 1)
+                .First().MakeGenericMethod(roleType);
+
+            var role = firstOrDefaultMethod.Invoke(null, new[] { filteredRoles });
+
+            if (role != null)
+            {
+                var idProperty = roleType.GetProperty("Id");
+                if (idProperty != null)
+                {
+                    var id = idProperty.GetValue(role);
+                    if (id is Guid guidId)
+                    {
+                        return guidId;
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Return null if there's any error
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Gets a user-friendly display name for a workflow state

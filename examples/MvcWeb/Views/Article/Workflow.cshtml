@@ -1,69 +1,123 @@
-@model IEnumerable<MvcWeb.Models.SubmittedArticle>
+@model IEnumerable<MvcWeb.Models.WorkflowItem>
 @{
-    ViewBag.Title = "Article Workflow";
-    
-    // Helper function to get status badge color
-    string GetStatusBadgeClass(MvcWeb.Models.ArticleStatus status) => status switch
-    {
-        MvcWeb.Models.ArticleStatus.Draft => "bg-secondary",
-        MvcWeb.Models.ArticleStatus.InReview => "bg-info",
-        MvcWeb.Models.ArticleStatus.Rejected => "bg-danger",
-        MvcWeb.Models.ArticleStatus.Approved => "bg-warning",
-        MvcWeb.Models.ArticleStatus.Published => "bg-success",
-        MvcWeb.Models.ArticleStatus.Archived => "bg-dark",
-        _ => "bg-secondary"
-    };
+    ViewBag.Title = "Content Workflow";
 }
 
 <div class="container">
     <div class="row">
         <div class="col-12">
-            <h1 class="mb-4">Article Workflow</h1>
+            <h1 class="mb-4">Content Workflow</h1>
+            
+            @if (ViewBag.ErrorMessage != null)
+            {
+                <div class="alert alert-danger">
+                    @ViewBag.ErrorMessage
+                </div>
+            }
             
             @if (!Model.Any())
             {
                 <div class="alert alert-info">
-                    No articles are currently in the workflow.
+                    <i class="fas fa-info-circle me-2"></i>
+                    No content items are currently available for you to modify in the workflow.
                 </div>
             }
             else
             {
+                <div class="mb-3">
+                    <small class="text-muted">
+                        Showing @Model.Count() content items that you can modify based on your workflow permissions.
+                    </small>
+                </div>
+                
                 <div class="table-responsive">
                     <table class="table table-striped">
                         <thead>
                             <tr>
+                                <th>Type</th>
                                 <th>Title</th>
                                 <th>Author</th>
-                                <th>Submitted</th>
+                                <th>Created</th>
+                                <th>Last Modified</th>
                                 <th>Status</th>
-                                <th></th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var article in Model)
+                            @foreach (var item in Model)
                             {
                                 <tr>
                                     <td>
-                                        <a href="@Url.Action("Review", new { id = article.Id })">
-                                            @article.Submission.Title
-                                        </a>
-                                    </td>
-                                    <td>@article.Submission.Author</td>
-                                    <td>@article.Created.ToString("yyyy-MM-dd")</td>
-                                    <td>
-                                        <span class="badge @GetStatusBadgeClass(article.Status)">
-                                            @article.Status.ToString()
+                                        <span class="badge @(item.ContentType == "post" ? "bg-primary" : "bg-info")">
+                                            <i class="fas @(item.ContentType == "post" ? "fa-file-alt" : "fa-newspaper") me-1"></i>
+                                            @item.ContentType.ToUpper()
                                         </span>
                                     </td>
                                     <td>
-                                        <a href="@Url.Action("Review", new { id = article.Id })" class="btn btn-sm btn-primary">
-                                            Review
+                                        <a href="@item.GetReviewUrl()" class="text-decoration-none">
+                                            @item.Title
                                         </a>
+                                        @if (item.IsPublished)
+                                        {
+                                            <i class="fas fa-eye text-success ms-1" title="Published"></i>
+                                        }
+                                    </td>
+                                    <td>@item.Author</td>
+                                    <td>
+                                        <small>@item.Created.ToString("yyyy-MM-dd HH:mm")</small>
+                                    </td>
+                                    <td>
+                                        <small>@item.LastModified.ToString("yyyy-MM-dd HH:mm")</small>
+                                    </td>
+                                    <td>
+                                        <span class="badge @item.GetStatusBadgeClass()">
+                                            @item.GetDisplayStatus()
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <a href="@item.GetReviewUrl()" class="btn btn-sm btn-outline-primary" title="Review">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            
+                                            @if (item.AvailableActions.Any())
+                                            {
+                                                <div class="btn-group" role="group">
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                                                        <i class="fas fa-cog"></i>
+                                                    </button>
+                                                    <ul class="dropdown-menu">
+                                                        @foreach (var action in item.AvailableActions)
+                                                        {
+                                                            <li>
+                                                                <span class="dropdown-item-text small text-muted">
+                                                                    <i class="@action.Icon me-1"></i>
+                                                                    @action.Name
+                                                                </span>
+                                                            </li>
+                                                        }
+                                                    </ul>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <span class="btn btn-sm btn-outline-secondary disabled" title="No actions available">
+                                                    <i class="fas fa-lock"></i>
+                                                </span>
+                                            }
+                                        </div>
                                     </td>
                                 </tr>
                             }
                         </tbody>
                     </table>
+                </div>
+                
+                <div class="mt-3">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Click on a content title to review and take actions. Available actions depend on your role and the current workflow state.
+                    </small>
                 </div>
             }
         </div>

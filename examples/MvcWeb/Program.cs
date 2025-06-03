@@ -26,23 +26,38 @@ builder.Services.AddOpenTelemetry()
             ["deployment.environment"] = builder.Environment.EnvironmentName
         }))
     .WithTracing(tracing => tracing
+        .AddSource("MvcWeb.Application")
+        .AddSource("MvcWeb.ArticleController") 
+        .AddSource("MvcWeb.ArticleSubmissionRepository")
         .AddAspNetCoreInstrumentation(options =>
         {
             options.RecordException = true;
+            options.Filter = (httpContext) => 
+            {
+                // Don't trace static files or health checks
+                var path = httpContext.Request.Path.Value?.ToLowerInvariant();
+                return !(path?.Contains("/lib/") == true || 
+                        path?.Contains("/css/") == true || 
+                        path?.Contains("/js/") == true ||
+                        path?.Contains("/favicon") == true);
+            };
         })
         .AddHttpClientInstrumentation()
         .AddEntityFrameworkCoreInstrumentation(options =>
         {
             options.SetDbStatementForText = true;
+            options.SetDbStatementForStoredProcedure = true;
         })
         .AddJaegerExporter(options =>
         {
-            options.AgentHost = builder.Configuration.GetValue<string>("Jaeger:AgentHost") ?? "localhost";
-            options.AgentPort = builder.Configuration.GetValue<int>("Jaeger:AgentPort", 6831);
+            options.Endpoint = new Uri(builder.Configuration.GetValue<string>("Jaeger:Endpoint") ?? "http://localhost:14268/api/traces");
         }))
     .WithMetrics(metrics => metrics
         .AddAspNetCoreInstrumentation()
         .AddHttpClientInstrumentation()
+        .AddMeter("MvcWeb.Application")
+        .AddMeter("MvcWeb.ArticleSubmissionRepository")
+        .AddMeter("MvcWeb.ArticleController")
         .AddPrometheusExporter());
 
 builder.AddPiranha(options =>
@@ -66,10 +81,6 @@ builder.AddPiranha(options =>
     var connectionString = builder.Configuration.GetConnectionString("piranha");
     options.UseEF<SQLiteDb>(db => db.UseSqlite(connectionString));
     options.UseIdentityWithSeed<IdentitySQLiteDb>(db => db.UseSqlite(connectionString));
-
-    // Add our article database context
-    builder.Services.AddDbContext<ArticleDbContext>(options => 
-        options.UseSqlite(connectionString));
         
     // Register our custom repository
     builder.Services.AddScoped<ArticleSubmissionRepository>();
@@ -141,12 +152,6 @@ app.UsePiranha(options =>
     Seed.RunAsync(options.Api).GetAwaiter().GetResult();
 });
 
-// Ensure database is created
-using (var scope = app.Services.CreateScope())
-{
-    var articleDbContext = scope.ServiceProvider.GetService<ArticleDbContext>();
-    articleDbContext?.Database.EnsureCreated();
-}
 
 // Map Prometheus metrics endpoint
 app.MapPrometheusScrapingEndpoint();

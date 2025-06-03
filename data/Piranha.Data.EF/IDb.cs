@@ -226,6 +226,11 @@ public interface IDb : IDisposable
     /// Gets/sets the workflow transition set.
     /// </summary>
     DbSet<Data.WorkflowTransition> WorkflowTransitions { get; set; }
+    
+    /// <summary>
+    /// Ǵets/sets the article submission set.
+    /// </summary>
+    DbSet<Data.ArticleSubmission> ArticleSubmissions { get; set; }
 
     /// <summary>
     /// Gets the entity set for the specified type.
